@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react';
 import { Activity, X, Upload, Search, CheckCircle, Database, FileText } from '../components/Icons.jsx';
 import { calcOgShortCircuit } from '../calculators/index.js';
 import { exportOgShortCircuit, exportOgShortCircuitPDF } from '../utils/export.js';
+import { parseUedasPdf } from '../utils/uedas-parser.js';
 
 export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGoTopraklama }) {
   const [selectedScenario, setSelectedScenario] = useState('min');
@@ -19,6 +20,37 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
   const [manualTrafoUk, setManualTrafoUk] = useState(12.5);
   const [exporting, setExporting] = useState(false);
   const [trafoTip, setTrafoTip] = useState('Dyn');
+  const [pdfParsing, setPdfParsing] = useState(false);
+  const [pdfInfo, setPdfInfo] = useState(null); // { sourceName, count }
+
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setPdfParsing(true);
+    setPdfInfo(null);
+    try {
+      const { segments, sourceName, sourceKva, sourceUk } = await parseUedasPdf(file);
+      if (segments.length === 0) throw new Error('Segment bulunamadı');
+      setLines(segments.map(s => ({
+        id: s.id,
+        name: s.name,
+        cableTypeId: s.cableTypeId,
+        length: parseFloat(s.length.toFixed(4)),
+        circuitCount: s.circuitCount,
+      })));
+      setPdfInfo({ sourceName: sourceName || file.name, count: segments.length, sourceKva, sourceUk });
+      // Manuel mod aç, kaynak ismini doldur
+      if (sourceName) {
+        setIsManualMode(true);
+        setManualName(sourceName.slice(0, 50));
+      }
+    } catch (err) {
+      alert('PDF okunamadı: ' + err.message);
+    } finally {
+      setPdfParsing(false);
+      e.target.value = '';
+    }
+  };
 
   // Aktif liste: yüklenen CSV > TEİAŞ JSON > boş
   const activeList = useMemo(() => {
@@ -240,8 +272,28 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
         <div className="lg:col-span-2 bg-white p-5 rounded-xl shadow-sm border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-slate-700 text-sm">Hat Tanımları</h3>
-            <span className="text-xs text-slate-400">Çift devre → empedans ÷ n</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Çift devre → empedans ÷ n</span>
+              {/* UEDAŞ PDF Yükle */}
+              <label className={`flex items-center gap-1.5 cursor-pointer px-3 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${pdfParsing ? 'border-blue-200 text-blue-400 animate-pulse' : 'border-blue-300 text-blue-600 hover:bg-blue-50'}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+                </svg>
+                {pdfParsing ? 'Okunuyor...' : 'UEDAŞ Tek Hat PDF'}
+                <input type="file" accept=".pdf" className="hidden" onChange={handlePdfUpload} disabled={pdfParsing}/>
+              </label>
+            </div>
           </div>
+          {/* PDF parse sonucu banner */}
+          {pdfInfo && (
+            <div className="mb-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-blue-700">✓ PDF Yüklendi — {pdfInfo.count} segment</span>
+                <p className="text-[10px] text-blue-500 mt-0.5 font-mono">{pdfInfo.sourceName}</p>
+              </div>
+              <button onClick={() => setPdfInfo(null)} className="text-blue-300 hover:text-blue-500"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+            </div>
+          )}
           <div className="space-y-2">
             {lines.map((l, i) => (
               <div key={l.id} className="bg-slate-50 p-2.5 rounded-xl border space-y-2">

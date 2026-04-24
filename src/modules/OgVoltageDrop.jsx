@@ -3,12 +3,39 @@ import { useState } from 'react';
 import { Zap, X, FileText } from '../components/Icons.jsx';
 import { calcOgVoltageDrop } from '../calculators/index.js';
 import { exportOgVoltageDrop, exportToPDF, buildOgVoltageDropPDF } from '../utils/export.js';
+import { parseUedasPdf } from '../utils/uedas-parser.js';
 
 export default function OgVoltageDrop({ cables }) {
   const [nodes, setNodes] = useState([{ id: 1, name: 'Ana Hat', length: 5.45, loadKVA: 5400, cableTypeId: '3x1x240cu', circuitCount: 1 }]);
   const [results, setResults] = useState([]);
   const [metrics, setMetrics] = useState({ maxDrop: 0, totalPowerLoss: 0, percentPowerLoss: 0 });
   const [showDiagram, setShowDiagram] = useState(false);
+  const [pdfParsing, setPdfParsing] = useState(false);
+  const [pdfInfo, setPdfInfo] = useState(null);
+
+  const handlePdfUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setPdfParsing(true);
+    try {
+      const { segments, sourceName } = await parseUedasPdf(file);
+      if (segments.length === 0) throw new Error('Segment bulunamadı');
+      setNodes(segments.map(s => ({
+        id: s.id,
+        name: s.name,
+        cableTypeId: s.cableTypeId,
+        length: parseFloat(s.length.toFixed(4)),
+        circuitCount: s.circuitCount,
+        loadKVA: 0, // Kullanıcı girecek
+      })));
+      setPdfInfo({ sourceName: sourceName || file.name, count: segments.length });
+    } catch (err) {
+      alert('PDF okunamadı: ' + err.message);
+    } finally {
+      setPdfParsing(false);
+      e.target.value = '';
+    }
+  };
 
   const handleCalculate = () => {
     const { results: res, totalLossKW } = calcOgVoltageDrop(nodes, cables);
@@ -49,6 +76,22 @@ export default function OgVoltageDrop({ cables }) {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* Hat Girişleri */}
         <div className="xl:col-span-8 space-y-4">
+          {/* PDF Yükle banner */}
+          <div className="flex items-center gap-3">
+            <label className={`flex items-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-xs font-bold border-2 transition-all ${pdfParsing ? 'border-blue-200 text-blue-400 animate-pulse' : 'border-blue-300 text-blue-600 hover:bg-blue-50 bg-white'}`}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+              </svg>
+              {pdfParsing ? 'PDF Okunuyor...' : 'UEDAŞ Tek Hat PDF Yükle'}
+              <input type="file" accept=".pdf" className="hidden" onChange={handlePdfUpload} disabled={pdfParsing}/>
+            </label>
+            {pdfInfo && (
+              <div className="flex-1 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-700">✓ {pdfInfo.count} segment yüklendi — yük değerlerini (kVA) girin</span>
+                <button onClick={() => setPdfInfo(null)} className="text-blue-300 hover:text-blue-500 ml-2">✕</button>
+              </div>
+            )}
+          </div>
           {nodes.map((n, i) => (
             <div key={n.id} className="bg-white p-4 rounded-xl shadow-sm border grid grid-cols-12 gap-3 items-end">
               <div className="col-span-3">
