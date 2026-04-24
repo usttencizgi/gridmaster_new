@@ -103,9 +103,9 @@ export function calcOgShortCircuit(sourceParams, lines, cablesDB) {
   // ── 4. Sıfır sıra empedansı (faz–toprak için) ───────────────────
   const trafoTip = sourceParams.trafoTip || 'Dyn';
   // Dyn: delta primer şebeke Z0'ını bloklar → Z0_kaynak = yalnızca trafo
-  // Yyn: şebeke Z0 da eklenebilir → muhafazakâr olarak tüm bara empedansı
+  // type='current' modunda Z_trafo_pu = 0 olabilir → Z_bara_pu kullan
   const Z0_kaynak_pu = trafoTip === 'Dyn'
-    ? (Z_trafo_pu > 0 ? Z_trafo_pu : Z_bara_pu)
+    ? (Z_trafo_pu > 0 ? Z_trafo_pu : Z_bara_pu * 0.8) // tip=current: bara'nın %80'i trafo payı
     : Z_bara_pu;
 
   let Z0_lines_pu = 0;

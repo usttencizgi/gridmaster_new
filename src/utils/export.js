@@ -164,12 +164,18 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
   const Ib_kA = Ib / 1000;
   const summaryRows = [
     { id:'34.5 kV Barası', kv:'34.500',
-      ik:result.busbarCurrent, ip:result.ip_bara,
+      ik3: result.busbarCurrent, ip3: result.ip_bara,
+      ik1: result.Ik1_bara || 0, ip1: result.ip1_bara || 0,
       Z_ohm: result.Z1_bara_ohm },
     ...(result.lineDetails||[]).map((d,i) => {
-      const Ztot_pu = result.zBaraPu + (result.lineDetails.slice(0,i+1).reduce((a,x)=>a+x.Z_seg_ohm/Zb,0));
-      const ik = result.c*Ib/(Ztot_pu*1000);
-      return { id:`Hat ${d.idx} Sonu`, kv:'34.500', ik, ip: kappa*Math.sqrt(2)*ik, Z_ohm: Ztot_pu*Zb };
+      const Ztot_pu  = result.zBaraPu + (result.lineDetails.slice(0,i+1).reduce((a,x)=>a+x.Z_seg_ohm/Zb,0));
+      const ik3      = result.c*Ib/(Ztot_pu*1000);
+      const Z0tot_pu = (result.Z0_kaynak_pu||0) + (result.lineDetails.slice(0,i+1).reduce((a,x)=>a+(x.Z_seg_ohm*(x.z0Ratio||3.5))/Zb,0));
+      const ik1      = (Ztot_pu > 0 && Z0tot_pu > 0)
+        ? (result.c * 3 * Ib / ((2*Ztot_pu + Z0tot_pu) * 1000)) : 0;
+      return { id: d.name ? `${d.name} (Hat ${d.idx})` : `Hat ${d.idx} Sonu`,
+               kv:'34.500', ik3, ip3: kappa*Math.sqrt(2)*ik3,
+               ik1, ip1: kappa*Math.sqrt(2)*ik1, Z_ohm: Ztot_pu*Zb };
     }),
   ];
 
@@ -177,9 +183,10 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
     <tr>
       <td><b>${r.id}</b></td>
       <td class="mono">34.500</td>
-      <td class="mono" style="color:#1e40af;font-weight:700">${fmt(r.ik,3)}</td>
-      <td class="mono">${fmt(r.ip,3)}</td>
-      <td class="mono">${fmt(r.ik,3)}</td>
+      <td class="mono" style="color:#1e40af;font-weight:700">${fmt(r.ik3,3)}</td>
+      <td class="mono">${fmt(r.ip3,3)}</td>
+      <td class="mono" style="color:#c2410c;font-weight:700">${r.ik1>0?fmt(r.ik1,3):'—'}</td>
+      <td class="mono">${r.ip1>0?fmt(r.ip1,3):'—'}</td>
       <td class="mono">${fmt(r.Z_ohm/1.732,4)}</td>
       <td class="mono">${fmt(r.Z_ohm,4)}</td>
     </tr>`).join('');
@@ -312,10 +319,11 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
     <table>
       <thead><tr>
         <th>Bara ID</th><th>kV</th>
-        <th style="background:#1e40af">I&quot;k — 3-Faz (kA)</th>
-        <th>ip tepe (kA)</th>
-        <th>Ik kalıcı (kA)</th>
-        <th>Z+ pozitif sıra (Ω)</th>
+        <th style="background:#1e40af">I"k3 — 3-Faz (kA)</th>
+        <th>ip3 tepe (kA)</th>
+        <th style="background:#c2410c">I"k1 — Faz-Toprak (kA)</th>
+        <th>ip1 tepe (kA)</th>
+        <th>Z+ (Ω)</th>
         <th>Z toplam (Ω)</th>
       </tr></thead>
       <tbody>${summaryTableRows}</tbody>
