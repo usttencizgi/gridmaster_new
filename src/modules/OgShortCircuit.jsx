@@ -409,7 +409,7 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
                         <circle cx="0" cy="0" r="7" fill="#475569"/>
                         <line x1="7" y1="0" x2="55" y2="0" stroke="#475569" strokeWidth="2.5"/>
                         <text x="62" y="-4" fontSize="10" fontWeight="bold" fill="#1e293b">
-                          {l.name ? l.name : `Hat ${i+1} Sonu`}
+                          {line.name ? line.name : `Hat ${i+1} Sonu`}
                         </text>
                         <text x="62" y="9" fontSize="8" fill="#94a3b8">Hat {i+1}</text>
                         {i===lines.length-1 && result.lineEndCurrent>0 && (

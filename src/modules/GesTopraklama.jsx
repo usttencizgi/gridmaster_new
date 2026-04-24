@@ -222,7 +222,7 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
                 </span>
               )}
             </div>
-            <NInput label="Faz-Toprak Arıza Akımı I\"k1 [kA]" value={Ik1} onChange={setIk1} unit="kA" step={0.001} min={0.001} />
+            <NInput label='Faz-Toprak Arıza Akımı I"k1 [kA]' value={Ik1} onChange={setIk1} unit="kA" step={0.001} min={0.001} />
             <p className="text-[10px] text-slate-400 mt-2 font-mono">= {(Ik1 * 1000).toFixed(0)} A</p>
           </div>
 
