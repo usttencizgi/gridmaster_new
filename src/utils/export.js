@@ -90,11 +90,14 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
   const Ib   = result.Ib   || 1673.5;
   const kappa = result.kappa || 1.02;
 
-  // ─── BUS TABLOSU ───
+  // ─── BUS TABLOSU — düğüm isimleri ───
   const busRows = [
-    { id: '154 kV Şebeke', type: 'Güç Şebekesi', kv: '154.000', base: '154.000' },
-    { id: '34.5 kV Barası', type: 'Bara (Swing)', kv: '34.500',  base: '34.500'  },
-    ...lines.map((l, i) => ({ id: `Hat ${i+1} Sonu`, type: 'Yük Barası', kv: '34.500', base: '34.500' })),
+    { id: '154 kV Şebeke',  type: 'Güç Şebekesi', kv: '154.000', base: '154.000' },
+    { id: '34.5 kV Barası', type: 'Bara (Swing)',  kv: '34.500',  base: '34.500'  },
+    ...lines.map((l, i) => ({
+      id: l.name ? l.name : `Hat ${i+1} Sonu`,
+      type: 'Yük Barası', kv: '34.500', base: '34.500'
+    })),
   ];
 
   const busTableRows = busRows.map((b, i) => `
@@ -107,9 +110,9 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
     </tr>`).join('');
 
   // ─── HAT/KABLO TABLOSU ───
-  const cableTableRows = (result.lineDetails || []).map(d => `
+  const cableTableRows = (result.lineDetails || []).map((d, i) => `
     <tr>
-      <td><b>${d.idx}. Hat</b></td>
+      <td><b>${lines[i]?.name || `Hat ${d.idx}`}</b></td>
       <td>${d.cableName}</td>
       <td class="mono">${d.length}</td>
       <td class="mono">${d.circuitCount}</td>
@@ -226,67 +229,76 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
     </tr>`;
   }).join('');
 
-  // ─── ŞEMA SVG oluştur (zigzag) ───────────────────────────────
+  // ─── ŞEMA SVG — A4'e sığacak kompakt versiyon ────────────────────
   const PER_COL = 5;
-  const numCols = Math.ceil(lines.length / PER_COL);
+  const numCols = Math.max(1, Math.ceil(lines.length / PER_COL));
   const perCol  = Math.ceil(lines.length / numCols);
-  const SCH_W   = 680, COL_W = Math.min(155, (SCH_W-40)/numCols);
-  const ROW_H   = 95, TOP = 190;
-  const SCH_H   = TOP + perCol * ROW_H + 50;
-  const BARA_X  = 40 + (numCols * COL_W)/2;
+  const SCH_W   = 700, COL_W = Math.min(140, (SCH_W-40)/numCols);
+  const ROW_H   = 80,  TOP   = 155;
+  const SCH_H   = TOP + perCol * ROW_H + 40;
+  const BARA_X  = 40 + COL_W / 2;
 
   const schPos = lines.map((_, i) => {
     const col = Math.floor(i / perCol);
     const rowInCol = i % perCol;
     const row = col % 2 === 0 ? rowInCol : (perCol - 1 - rowInCol);
-    const cx = 40 + col * COL_W + COL_W/2;
-    const cy = TOP + row * ROW_H + 35;
-    return { col, row, cx, cy };
+    return { col, row, cx: 40 + col*COL_W + COL_W/2, cy: TOP + row*ROW_H + 30 };
   });
 
   const Zb2 = 11.9025, Ib2 = 1673.5;
-  let cumZ2 = result.zBaraPu || 0;
-  const ik3vals = (result.lineDetails||[]).map(d => {
-    cumZ2 += (d.Z_seg_ohm||0)/Zb2;
-    return cumZ2 > 0 ? (1.10*Ib2/cumZ2/1000) : 0;
+  let cumZ2 = result.zBaraPu||0, cumZ02 = result.Z0_kaynak_pu||0;
+  const schIk = lines.map((_, i) => {
+    const d = result.lineDetails?.[i];
+    if (!d) return {ik3:0, ik1:0};
+    cumZ2  += (d.Z_seg_ohm||0)/Zb2;
+    cumZ02 += ((d.Z_seg_ohm*(d.z0Ratio||3.5))||0)/Zb2;
+    const ik3 = cumZ2>0  ? (1.10*Ib2/cumZ2/1000)  : 0;
+    const ik1 = (cumZ2>0&&cumZ02>0) ? (1.10*3*Ib2/((2*cumZ2+cumZ02)*1000)) : 0;
+    return { ik3, ik1 };
   });
 
-  const schemaSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SCH_W}" height="${SCH_H}" viewBox="0 0 ${SCH_W} ${SCH_H}" style="background:white;border:1px solid #e2e8f0;border-radius:6px">
-  <circle cx="${BARA_X}" cy="28" r="14" fill="#f5f3ff" stroke="#7c3aed" strokeWidth="2"/>
-  <text x="${BARA_X}" y="25" text-anchor="middle" font-size="7" font-weight="bold" fill="#7c3aed">154kV</text>
-  <text x="${BARA_X+18}" y="24" font-size="9" font-weight="bold" fill="#1e293b">${sourceName}</text>
-  <line x1="${BARA_X}" y1="42" x2="${BARA_X}" y2="80" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="3,2"/>
-  <rect x="${BARA_X-20}" y="80" width="40" height="28" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
-  <text x="${BARA_X}" y="91" text-anchor="middle" font-size="7" font-weight="bold" fill="#5b21b6">34.5kV</text>
-  <text x="${BARA_X}" y="102" text-anchor="middle" font-size="7" fill="#5b21b6">TRAFO</text>
-  <line x1="${BARA_X}" y1="108" x2="${BARA_X}" y2="135" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="3,2"/>
-  <line x1="25" y1="138" x2="${SCH_W-25}" y2="138" stroke="#1e293b" stroke-width="5" stroke-linecap="round"/>
-  <text x="${BARA_X}" y="128" text-anchor="middle" font-size="8" font-weight="bold" fill="#1e293b">34.5 kV Barası</text>
-  <text x="${BARA_X}" y="153" text-anchor="middle" font-size="8" font-weight="bold" fill="#6d28d9">I₃k=${result.busbarCurrent.toFixed(2)}kA${result.Ik1_bara>0?' | I₁k='+result.Ik1_bara.toFixed(2)+'kA':''}</text>
+  const schemaSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SCH_W}" height="${SCH_H}"
+    viewBox="0 0 ${SCH_W} ${SCH_H}" style="background:white;border:1px solid #e2e8f0;border-radius:4px;max-width:100%">
+  <circle cx="${BARA_X}" cy="22" r="12" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="${BARA_X}" y="19" text-anchor="middle" font-size="6" font-weight="bold" fill="#7c3aed">154kV</text>
+  <text x="${BARA_X+16}" y="18" font-size="8" font-weight="bold" fill="#1e293b">${sourceName}</text>
+  <line x1="${BARA_X}" y1="34" x2="${BARA_X}" y2="64" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="${BARA_X-18}" y="64" width="36" height="24" rx="3" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.2"/>
+  <text x="${BARA_X}" y="74" text-anchor="middle" font-size="6" font-weight="bold" fill="#5b21b6">34.5kV</text>
+  <text x="${BARA_X}" y="83" text-anchor="middle" font-size="6" fill="#5b21b6">TRAFO</text>
+  <line x1="${BARA_X}" y1="88" x2="${BARA_X}" y2="110" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="20" y1="113" x2="${SCH_W-20}" y2="113" stroke="#1e293b" stroke-width="4" stroke-linecap="round"/>
+  <text x="${BARA_X}" y="106" text-anchor="middle" font-size="7" font-weight="bold" fill="#1e293b">34.5 kV Barası</text>
+  <text x="${BARA_X}" y="127" text-anchor="middle" font-size="7" font-weight="bold" fill="#6d28d9">
+    I₃k=${result.busbarCurrent.toFixed(2)}kA${result.Ik1_bara>0?' | I₁k='+result.Ik1_bara.toFixed(2)+'kA':''}
+  </text>
   ${lines.map((line, i) => {
-    const p = schPos[i], cab = cables.find(c=>c.id===line.cableTypeId);
-    const n = line.circuitCount||1, ik = ik3vals[i]||0;
-    let prevX, prevY;
-    if (i===0) { prevX=40+schPos[0].col*COL_W+COL_W/2; prevY=138; }
-    else { prevX=schPos[i-1].cx; prevY=schPos[i-1].cy; }
-    const sameCol = i>0 && schPos[i-1].col===p.col;
-    const colChg  = i>0 && schPos[i-1].col!==p.col;
+    const p = schPos[i], d = result.lineDetails?.[i];
+    const cab = cables.find(c=>c.id===line.cableTypeId);
+    const n = line.circuitCount||1;
+    const {ik3,ik1} = schIk[i]||{};
+    const prevP = i>0 ? schPos[i-1] : null;
+    const sameCol = i>0 && prevP.col===p.col;
+    const colChg  = i>0 && prevP.col!==p.col;
     const lbl = line.name || `Hat ${i+1}`;
+    const nameRight = p.col%2===0;
     return `
-    ${i===0?`<line x1="${40+COL_W/2}" y1="138" x2="${40+COL_W/2}" y2="${p.cy-24}" stroke="#334155" stroke-width="1.5"/>`:''}
-    ${sameCol?`<line x1="${prevX}" y1="${prevY}" x2="${p.cx}" y2="${p.cy-24}" stroke="#334155" stroke-width="1.5" ${n>1?'stroke-dasharray="4,2"':''}/>`:``}
-    ${colChg?`<path d="M ${prevX} ${prevY} L ${prevX} ${p.cy} L ${p.cx} ${p.cy}" fill="none" stroke="#334155" stroke-width="1.5" stroke-linejoin="round"/>`:``}
-    <rect x="${p.cx-30}" y="${p.cy-48}" width="60" height="22" rx="3" fill="#e0f2fe" stroke="#0284c7" stroke-width="1"/>
-    <text x="${p.cx}" y="${p.cy-38}" text-anchor="middle" font-size="6" font-weight="bold" fill="#0369a1">${cab?.name||'?'}</text>
-    <text x="${p.cx}" y="${p.cy-29}" text-anchor="middle" font-size="6" fill="#0369a1">${line.length}km${n>1?' ×'+n:''}</text>
-    <circle cx="${p.cx}" cy="${p.cy}" r="4.5" fill="#475569"/>
-    ${p.col%2===0
-      ? `<text x="${p.cx+7}" y="${p.cy+4}" font-size="7.5" font-weight="bold" fill="#1e293b">${lbl}</text>`
-      : `<text x="${p.cx-7}" y="${p.cy+4}" text-anchor="end" font-size="7.5" font-weight="bold" fill="#1e293b">${lbl}</text>`}
-    ${ik>0?`<text x="${p.cx}" y="${p.cy+14}" text-anchor="middle" font-size="7" fill="#7c3aed" font-weight="bold">${ik.toFixed(2)}kA</text>`:''}`;
+    ${i===0?`<line x1="${BARA_X}" y1="113" x2="${BARA_X}" y2="${p.cy}" stroke="#334155" stroke-width="1.5"/>`:''}
+    ${sameCol?`<line x1="${prevP.cx}" y1="${prevP.cy}" x2="${p.cx}" y2="${p.cy}" stroke="#334155" stroke-width="1.5" ${n>1?'stroke-dasharray="5,2"':''}/>`:``}
+    ${colChg?`<path d="M ${prevP.cx} ${prevP.cy} L ${prevP.cx} ${p.cy} L ${p.cx} ${p.cy}" fill="none" stroke="#334155" stroke-width="1.5" stroke-linejoin="round"/>`:``}
+    <rect x="${p.cx-28}" y="${((i===0?113:prevP.cy)+p.cy)/2-10}" width="56" height="20" rx="3" fill="white"/>
+    <rect x="${p.cx-28}" y="${((i===0?113:prevP.cy)+p.cy)/2-10}" width="56" height="20" rx="3" fill="#e0f2fe" stroke="#0284c7" stroke-width="0.8"/>
+    <text x="${p.cx}" y="${((i===0?113:prevP.cy)+p.cy)/2-2}" text-anchor="middle" font-size="5.5" font-weight="bold" fill="#0369a1">${cab?.name||'?'}</text>
+    <text x="${p.cx}" y="${((i===0?113:prevP.cy)+p.cy)/2+8}" text-anchor="middle" font-size="5.5" fill="#0369a1">${d?.length?.toFixed(3)||line.length}km${n>1?' ×'+n:''}</text>
+    <circle cx="${p.cx}" cy="${p.cy}" r="5" fill="white" stroke="#334155" stroke-width="1.5"/>
+    <circle cx="${p.cx}" cy="${p.cy}" r="3.5" fill="#334155"/>
+    ${nameRight
+      ? `<text x="${p.cx+8}" y="${p.cy+4}" font-size="7" font-weight="bold" fill="#1e293b">${lbl}</text>`
+      : `<text x="${p.cx-8}" y="${p.cy+4}" text-anchor="end" font-size="7" font-weight="bold" fill="#1e293b">${lbl}</text>`}
+    ${ik3>0?`<text x="${nameRight?p.cx+8:p.cx-8}" y="${p.cy+14}" ${nameRight?'':'text-anchor="end"'} font-size="6" fill="#7c3aed" font-weight="bold">I₃k=${ik3.toFixed(2)}kA</text>`:''}
+    ${ik1>0?`<text x="${nameRight?p.cx+8:p.cx-8}" y="${p.cy+23}" ${nameRight?'':'text-anchor="end"'} font-size="5.5" fill="#ea580c">I₁k=${ik1.toFixed(2)}kA</text>`:''}`;
   }).join('')}
   </svg>`;
-
   const html = `
     <!-- KAPAK BAŞLIĞI -->
     <table style="margin-bottom:0;font-size:11px">
@@ -408,57 +420,129 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
       <tbody>${seqRows}</tbody>
     </table>
 
+    ${(result.Ik1_bara > 0) ? `
+    <div style="margin:16px 0 6px;font-size:13px;font-weight:900;color:#c2410c;border-bottom:2px solid #c2410c;padding-bottom:4px">
+      7.  FAZ–TOPRAK KISA DEVRE (I&quot;k1) — IEC 60909
+    </div>
+    <div style="font-size:9px;color:#64748b;margin-bottom:6px">
+      Trafo bağlantı: ${result.trafoTip||'Dyn'} &nbsp;|&nbsp; Z0/Z1 ≈ 3.5 &nbsp;|&nbsp;
+      I&quot;k1 = c×3×Ib / (2×Z1+Z0) &nbsp;|&nbsp; κ = ${kappa}
+    </div>
+    <table>
+      <thead><tr>
+        <th>Bara / Düğüm</th><th>kV</th>
+        <th style="background:#c2410c">I&quot;k1 (kA)</th>
+        <th>ip1 tepe (kA)</th>
+        <th>Z1 (Ω)</th><th>Z0 (Ω)</th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><b>34.5 kV Barası</b></td>
+          <td class="mono">34.500</td>
+          <td class="mono" style="color:#c2410c;font-weight:700">${fmt(result.Ik1_bara,3)}</td>
+          <td class="mono">${fmt(result.ip1_bara,3)}</td>
+          <td class="mono">${fmt(result.Z1_bara_ohm,4)}</td>
+          <td class="mono">${fmt((result.Z0_bara_pu||0)*Zb,4)}</td>
+        </tr>
+        ${(() => {
+          let cZ1=result.zBaraPu||0, cZ0=result.Z0_kaynak_pu||0;
+          return (result.lineDetails||[]).map((d,i)=>{
+            cZ1+=(d.Z_seg_ohm||0)/Zb;
+            cZ0+=((d.Z_seg_ohm*(d.z0Ratio||3.5))||0)/Zb;
+            const ik1=(cZ1>0&&cZ0>0)?fmt(result.c*3*Ib/((2*cZ1+cZ0)*1000),3):'—';
+            const ip1=(cZ1>0&&cZ0>0)?fmt(kappa*Math.sqrt(2)*result.c*3*Ib/((2*cZ1+cZ0)*1000),3):'—';
+            const nid = lines[i]?.name || `Hat ${d.idx} Sonu`;
+            return `<tr>
+              <td><b>${nid}</b></td>
+              <td class="mono">34.500</td>
+              <td class="mono" style="color:#c2410c;font-weight:700">${ik1}</td>
+              <td class="mono">${ip1}</td>
+              <td class="mono">${fmt(cZ1*Zb,4)}</td>
+              <td class="mono">${fmt(cZ0*Zb,4)}</td>
+            </tr>`;
+          }).join('');
+        })()}
+      </tbody>
+    </table>` : ''}
+
     <!-- SONUÇ KUTUSU -->
-    <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr ${result.Ik1_bara>0?'1fr':''};gap:12px">
       <div style="background:#eff6ff;border:2px solid #3b82f6;border-radius:8px;padding:12px">
         <div style="font-size:10px;font-weight:700;color:#1e40af;margin-bottom:6px;text-transform:uppercase">34.5 kV Barası — Üç-Faz Kısa Devre</div>
         <div style="font-family:monospace">
-          <div>I&quot;k = <b style="font-size:16px;color:#1e40af">${fmt(result.busbarCurrent,3)} kA</b></div>
+          <div>I&quot;k3 = <b style="font-size:16px;color:#1e40af">${fmt(result.busbarCurrent,3)} kA</b></div>
           <div style="margin-top:4px">ip  = ${fmt(result.ip_bara,3)} kA &nbsp;(κ×√2×I&quot;k)</div>
           <div style="margin-top:2px">Z+  = ${fmt(result.Z1_bara_ohm,4)} Ω</div>
-          <div style="margin-top:2px">Zb  = ${fmt(Zb,4)} Ω &nbsp;|&nbsp; Ib = ${fmt(Ib,1)} A</div>
         </div>
       </div>
       <div style="background:#faf5ff;border:2px solid #a855f7;border-radius:8px;padding:12px">
-        <div style="font-size:10px;font-weight:700;color:#7c3aed;margin-bottom:6px;text-transform:uppercase">Hat Zinciri Sonu — Üç-Faz Kısa Devre</div>
+        <div style="font-size:10px;font-weight:700;color:#7c3aed;margin-bottom:6px;text-transform:uppercase">Hat Sonu — Üç-Faz Kısa Devre</div>
         <div style="font-family:monospace">
-          <div>I&quot;k = <b style="font-size:16px;color:#7c3aed">${fmt(result.lineEndCurrent,3)} kA</b></div>
+          <div>I&quot;k3 = <b style="font-size:16px;color:#7c3aed">${fmt(result.lineEndCurrent,3)} kA</b></div>
           <div style="margin-top:4px">ip  = ${fmt(result.ip_end,3)} kA</div>
           <div style="margin-top:2px">Z+  = ${fmt(result.Z1_end_ohm,4)} Ω</div>
-          <div style="margin-top:2px">${lines.length} hat, toplam ${lines.reduce((a,l)=>a+l.length,0).toFixed(2)} km</div>
         </div>
       </div>
+      ${result.Ik1_bara>0?`
+      <div style="background:#fff7ed;border:2px solid #ea580c;border-radius:8px;padding:12px">
+        <div style="font-size:10px;font-weight:700;color:#c2410c;margin-bottom:6px;text-transform:uppercase">Faz–Toprak Kısa Devre (${result.trafoTip||'Dyn'})</div>
+        <div style="font-family:monospace">
+          <div>I&quot;k1 bara = <b style="font-size:14px;color:#c2410c">${fmt(result.Ik1_bara,3)} kA</b></div>
+          <div style="margin-top:4px">I&quot;k1 hat sonu = <b style="color:#ea580c">${fmt(result.Ik1_end,3)} kA</b></div>
+          <div style="margin-top:2px;font-size:9px;color:#9a3412">Z0/Z1≈3.5 · c=1.10 · Dyn</div>
+        </div>
+      </div>`:''}
     </div>
   `;
 
-  const printWindow = window.open('', '_blank', 'width=1100,height=800');
+  const printWindow = window.open('', '_blank', 'width=1200,height=850');
+  const wordSafeName = sourceName.replace(/\s+/g,'_');
   printWindow.document.write(`
     <!DOCTYPE html><html lang="tr"><head>
     <meta charset="UTF-8">
     <title>OG Kısa Devre Raporu — ${sourceName}</title>
     <style>
       *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#1e293b;background:white;padding:18px}
-      table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:9.5px}
-      th{background:#1e3a5f;color:white;padding:5px 7px;text-align:left;font-weight:700;font-size:8.5px;text-transform:uppercase;letter-spacing:.4px}
-      td{padding:4px 7px;border-bottom:1px solid #e2e8f0;vertical-align:middle}
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:9.5px;color:#1e293b;background:white;padding:14px}
+      table{width:100%;border-collapse:collapse;margin-bottom:9px;font-size:9px}
+      th{background:#1e3a5f;color:white;padding:4px 6px;text-align:left;font-weight:700;font-size:8px;text-transform:uppercase;letter-spacing:.4px}
+      td{padding:3px 6px;border-bottom:1px solid #e2e8f0;vertical-align:middle}
       tr:nth-child(even) td{background:#f8fafc}
       .mono{font-family:'Consolas','Courier New',monospace}
-      .footer{margin-top:16px;padding-top:8px;border-top:1px solid #e2e8f0;font-size:8px;color:#94a3b8;display:flex;justify-content:space-between}
+      .toolbar{position:fixed;top:10px;right:10px;display:flex;gap:8px;z-index:9999}
+      .btn{padding:7px 16px;border:none;border-radius:7px;font-weight:700;cursor:pointer;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+      .btn-pdf{background:#1e3a5f;color:white}
+      .btn-word{background:#166534;color:white}
+      .footer{margin-top:10px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:8px;color:#94a3b8;display:flex;justify-content:space-between}
       @media print{
-        body{padding:8px}
-        @page{margin:10mm;size:A4 landscape}
+        .toolbar{display:none!important}
+        body{padding:6px}
+        @page{margin:7mm 8mm;size:A4 landscape}
         table{page-break-inside:auto}
-        tr{page-break-inside:avoid;page-break-after:auto}
+        tr{page-break-inside:avoid}
+        svg{max-width:100%!important;height:auto!important}
       }
     </style></head><body>
+    <div class="toolbar">
+      <button class="btn btn-pdf" onclick="window.print()">🖨 PDF Yazdır</button>
+      <button class="btn btn-word" onclick="(function(){
+        var h='<!DOCTYPE html><html><head><meta charset=UTF-8><style>body{font-family:Arial,sans-serif;font-size:10pt}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:white;padding:4pt 6pt;font-size:8pt;text-align:left}td{padding:3pt 6pt;border:1px solid #ccc}tr:nth-child(even) td{background:#f9f9f9}.mono{font-family:Courier}</style></head><body>'+
+          document.body.innerHTML.replace(/<div class=\"toolbar\">[\\s\\S]*?<\\/div>/,'')
+          .replace(/<svg[\\s\\S]*?<\\/svg>/g,'<p>[Tek Hat Şeması — PDF versiyonunda mevcuttur]</p>')+'</body></html>';
+        var b=new Blob([h],{type:'application/msword'});
+        var u=URL.createObjectURL(b);
+        var a=document.createElement('a');a.href=u;
+        a.download='OG_Kisa_Devre_${wordSafeName}.doc';
+        document.body.appendChild(a);a.click();
+        document.body.removeChild(a);URL.revokeObjectURL(u);
+      })()">📄 Word İndir</button>
+    </div>
     ${html}
     <div class="footer">
       <span>GridMaster — Elektrik Mühendisliği Hesap Platformu</span>
-      <span>IEC 60909 | Sb=100MVA, Ub=34.5kV, c=${result.c||1.10}, κ=${kappa}</span>
+      <span>IEC 60909 | Sb=${result.Sb||100}MVA · Ub=${result.Ub||34.5}kV · c=${result.c||1.10} · κ=${kappa}</span>
       <span>${dateStr} ${timeStr}</span>
     </div>
-    <script>window.onload=()=>{window.print();}<\/script>
     </body></html>
   `);
   printWindow.document.close();
