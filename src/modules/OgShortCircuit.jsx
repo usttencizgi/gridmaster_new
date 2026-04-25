@@ -346,23 +346,75 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
                 </div>
               </div>
               {/* Faz–Toprak */}
-              {result.Ik1_bara > 0 && (
-                <div className="grid grid-cols-2 gap-4 p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl border border-orange-200">
-                  <div className="text-center">
-                    <div className="text-[10px] text-orange-600 font-bold uppercase mb-1">Bara I"k1 — Faz–Toprak</div>
-                    <div className="text-3xl font-bold font-mono text-orange-600">{result.Ik1_bara.toFixed(2)} kA</div>
-                    <div className="text-xs text-slate-400 mt-1">ip = {result.ip1_bara?.toFixed(2)} kA</div>
+              {(result.Ik1_bara > 0 || result.Ik1_end > 0) ? (
+                <div className="p-4 bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl border border-orange-200 space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="text-center">
+                      <div className="text-[10px] text-orange-600 font-bold uppercase mb-1">Bara I"k1 — Faz–Toprak</div>
+                      <div className="text-3xl font-bold font-mono text-orange-600">{(result.Ik1_bara||0).toFixed(2)} kA</div>
+                      <div className="text-xs text-slate-400 mt-1">ip = {result.ip1_bara?.toFixed(2)} kA</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-[10px] text-orange-600 font-bold uppercase mb-1">Hat Sonu I"k1 — Faz–Toprak</div>
+                      <div className="text-3xl font-bold font-mono text-amber-600">{(result.Ik1_end||0).toFixed(2)} kA</div>
+                      <div className="text-xs text-slate-400 mt-1">ip = {result.ip1_end?.toFixed(2)} kA</div>
+                    </div>
                   </div>
+                  {/* Her düğüm için I"k1 tablosu */}
+                  {result.lineDetails?.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-orange-100 text-orange-800">
+                            {['Düğüm','I"k3 (kA)','I"k1 (kA)','ip3 (kA)','ip1 (kA)'].map(h=>(
+                              <th key={h} className="px-2 py-1.5 text-left font-bold text-[10px] uppercase">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-orange-100">
+                          {/* Bara satırı */}
+                          <tr className="bg-orange-50/50">
+                            <td className="px-2 py-1.5 font-bold text-orange-700">34.5 kV Barası</td>
+                            <td className="px-2 py-1.5 font-mono text-blue-700 font-bold">{result.busbarCurrent.toFixed(3)}</td>
+                            <td className="px-2 py-1.5 font-mono text-orange-700 font-bold">{(result.Ik1_bara||0).toFixed(3)}</td>
+                            <td className="px-2 py-1.5 font-mono">{result.ip_bara?.toFixed(3)||'—'}</td>
+                            <td className="px-2 py-1.5 font-mono">{result.ip1_bara?.toFixed(3)||'—'}</td>
+                          </tr>
+                          {/* Her hat sonu */}
+                          {(() => {
+                            const Zb2=11.9025, Ib2=1673.5, c2=result.c||1.10, k=1.02;
+                            let cumZ1=result.zBaraPu||0, cumZ0=result.Z0_kaynak_pu||0;
+                            return (result.lineDetails||[]).map((d,i)=>{
+                              cumZ1+=(d.Z_seg_ohm||0)/Zb2;
+                              cumZ0+=(d.Z_seg_ohm*(d.z0Ratio||3.5)||0)/Zb2;
+                              const ik3=cumZ1>0?c2*Ib2/cumZ1/1000:0;
+                              const ik1=(cumZ1>0&&cumZ0>0)?c2*3*Ib2/((2*cumZ1+cumZ0)*1000):0;
+                              return (
+                                <tr key={i} className={i%2===0?'bg-white':'bg-orange-50/30'}>
+                                  <td className="px-2 py-1.5 font-bold text-slate-700">
+                                    {d.name || `Hat ${d.idx} Sonu`}
+                                  </td>
+                                  <td className="px-2 py-1.5 font-mono text-blue-700 font-bold">{ik3.toFixed(3)}</td>
+                                  <td className="px-2 py-1.5 font-mono text-orange-700 font-bold">{ik1>0?ik1.toFixed(3):'—'}</td>
+                                  <td className="px-2 py-1.5 font-mono">{(k*Math.sqrt(2)*ik3).toFixed(3)}</td>
+                                  <td className="px-2 py-1.5 font-mono">{ik1>0?(k*Math.sqrt(2)*ik1).toFixed(3):'—'}</td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                   <div className="text-center">
-                    <div className="text-[10px] text-orange-600 font-bold uppercase mb-1">Hat Sonu I"k1 — Faz–Toprak</div>
-                    <div className="text-3xl font-bold font-mono text-amber-600">{result.Ik1_end.toFixed(2)} kA</div>
-                    <div className="text-xs text-slate-400 mt-1">ip = {result.ip1_end?.toFixed(2)} kA</div>
-                  </div>
-                  <div className="col-span-2 text-center">
                     <span className="text-[10px] font-mono text-slate-400">
-                      Z0/Z1 = 3.5 (kablo)  |  Trafo: {result.trafoTip}  |  I"k1 = c×3×Ib / (2×Z1+Z0)
+                      Z0/Z1 ≈ 3.5 (kablo/hat)  |  Trafo: {result.trafoTip||'Dyn'}  |  I"k1 = c×3×Ib / (2×Z1+Z0)
                     </span>
                   </div>
+                </div>
+              ) : (
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center text-xs text-orange-600">
+                  Faz-toprak I"k1 hesabı için sol panelde <b>Trafo Bağlantı Tipi</b> seçiniz (Dyn/Yyn)
                 </div>
               )}
               {/* Topraklama yönlendirme butonu */}
@@ -423,35 +475,40 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
             </div>
             <div className="flex-1 overflow-auto p-4 bg-slate-50">
               {(() => {
-                // Zigzag/yılan düzeni: her sütunda max 5 hat
                 const PER_COL = 5;
-                const numCols = Math.ceil(lines.length / PER_COL);
+                const numCols = Math.max(1, Math.ceil(lines.length / PER_COL));
                 const perCol  = Math.ceil(lines.length / numCols);
                 const SVG_W   = 520;
-                const COL_W   = Math.min(160, (SVG_W - 40) / numCols);
-                const ROW_H   = 110;
-                const TOP     = 220;
-                const SVG_H   = TOP + perCol * ROW_H + 60;
-                const BARA_X  = 40 + (numCols * COL_W) / 2;
+                const COL_W   = Math.floor((SVG_W - 40) / numCols);
+                const ROW_H   = 115;
+                const TOP     = 215;
+                const SVG_H   = TOP + perCol * ROW_H + 55;
+                const BARA_X  = 40 + COL_W / 2;  // ilk sütun merkezi
 
-                // Her hat için koordinat
+                // Her hat için koordinat — yılan düzeni
                 const pos = lines.map((_, i) => {
                   const col = Math.floor(i / perCol);
                   const rowInCol = i % perCol;
-                  // Çift sütunlar yukarı gider (yılan)
                   const row = col % 2 === 0 ? rowInCol : (perCol - 1 - rowInCol);
                   const cx = 40 + col * COL_W + COL_W / 2;
-                  const cy = TOP + row * ROW_H + 40;
+                  const cy = TOP + row * ROW_H;
                   return { col, row, cx, cy };
                 });
 
-                // Kümülatif Ik3 hesabı
-                const Zb = 11.9025, Ib = 1673.5, c = 1.10;
-                const ik3vals = [];
-                let cumZ = result.zBaraPu || 0;
-                (result.lineDetails || []).forEach(d => {
-                  cumZ += (d.Z_seg_ohm || 0) / Zb;
-                  ik3vals.push(cumZ > 0 ? (c * Ib / cumZ / 1000) : 0);
+                // Kümülatif I₃k
+                const Zb2 = 11.9025, Ib2 = 1673.5, c2 = result.c || 1.10;
+                let cumZ2 = result.zBaraPu || 0;
+                const ik3v = (result.lineDetails||[]).map(d => {
+                  cumZ2 += (d.Z_seg_ohm||0) / Zb2;
+                  return cumZ2 > 0 ? c2 * Ib2 / cumZ2 / 1000 : 0;
+                });
+                // Kümülatif I₁k
+                let cumZ1 = result.zBaraPu || 0;
+                let cumZ0 = result.Z0_kaynak_pu || 0;
+                const ik1v = (result.lineDetails||[]).map(d => {
+                  cumZ1 += (d.Z_seg_ohm||0) / Zb2;
+                  cumZ0 += (d.Z_seg_ohm * (d.z0Ratio||3.5)||0) / Zb2;
+                  return (cumZ1 > 0 && cumZ0 > 0) ? c2 * 3 * Ib2 / ((2*cumZ1+cumZ0)*1000) : 0;
                 });
 
                 return (
@@ -460,91 +517,116 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
                     className="w-full bg-white rounded-xl border shadow-sm">
 
                     {/* Şebeke */}
-                    <g transform={`translate(${BARA_X},30)`}>
-                      <circle cx="0" cy="0" r="16" fill="#f5f3ff" stroke="#7c3aed" strokeWidth="2"/>
-                      <text x="0" y="-3" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#7c3aed">154kV</text>
-                      <text x="20" y="-4" fontSize="9" fontWeight="bold" fill="#1e293b">{sourceName}</text>
-                      <text x="20" y="7"  fontSize="7" fill="#64748b">Güç Sistemi</text>
-                    </g>
+                    <circle cx={BARA_X} cy="28" r="16" fill="#f5f3ff" stroke="#7c3aed" strokeWidth="2"/>
+                    <text x={BARA_X} y="25" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#7c3aed">154kV</text>
+                    <text x={BARA_X+20} y="24" fontSize="9" fontWeight="bold" fill="#1e293b">{sourceName}</text>
+                    <text x={BARA_X+20} y="35" fontSize="7" fill="#64748b">Güç Sistemi</text>
 
                     {/* Trafo */}
-                    <line x1={BARA_X} y1="46" x2={BARA_X} y2="90" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4,3"/>
-                    <g transform={`translate(${BARA_X},103)`}>
-                      <rect x="-22" y="-16" width="44" height="32" rx="4" fill="#ede9fe" stroke="#7c3aed" strokeWidth="1.5"/>
-                      <text x="0" y="-3" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#5b21b6">34.5kV</text>
-                      <text x="0" y="9"  textAnchor="middle" fontSize="7" fill="#5b21b6">TRAFO</text>
-                    </g>
+                    <line x1={BARA_X} y1="44" x2={BARA_X} y2="84" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4,3"/>
+                    <rect x={BARA_X-22} y="84" width="44" height="30" rx="4" fill="#ede9fe" stroke="#7c3aed" strokeWidth="1.5"/>
+                    <text x={BARA_X} y="96" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#5b21b6">34.5kV</text>
+                    <text x={BARA_X} y="108" textAnchor="middle" fontSize="7" fill="#5b21b6">TRAFO</text>
 
                     {/* 34.5 kV Barası */}
-                    <line x1={BARA_X} y1="119" x2={BARA_X} y2="150" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4,3"/>
-                    <line x1="30" y1="155" x2={SVG_W-30} y2="155" stroke="#1e293b" strokeWidth="5" strokeLinecap="round"/>
-                    <text x={BARA_X} y="145" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#1e293b">34.5 kV Barası</text>
+                    <line x1={BARA_X} y1="114" x2={BARA_X} y2="148" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4,3"/>
+                    <line x1="20" y1="152" x2={SVG_W-20} y2="152" stroke="#1e293b" strokeWidth="5" strokeLinecap="round"/>
+                    <text x={BARA_X} y="143" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#1e293b">34.5 kV Barası</text>
                     {result.busbarCurrent > 0 && (
-                      <text x={BARA_X} y="172" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#6d28d9">
-                        {`I₃k=${result.busbarCurrent.toFixed(2)}kA${result.Ik1_bara>0?'  I₁k='+result.Ik1_bara.toFixed(2)+'kA':''}`}
+                      <text x={BARA_X} y="170" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#6d28d9">
+                        {`I₃k=${result.busbarCurrent.toFixed(2)}kA${result.Ik1_bara>0?' | I₁k='+result.Ik1_bara.toFixed(2)+'kA':''}`}
                       </text>
                     )}
 
-                    {/* Hatlar */}
+                    {/* ── ÖNce tüm çizgileri çiz, sonra düğümleri ── */}
+                    {lines.map((line, i) => {
+                      const p = pos[i];
+                      const n = line.circuitCount || 1;
+                      let prevX, prevY;
+                      if (i === 0) { prevX = BARA_X; prevY = 152; }
+                      else         { prevX = pos[i-1].cx; prevY = pos[i-1].cy; }
+                      const sameCol = i > 0 && pos[i-1].col === p.col;
+                      const colChg  = i > 0 && pos[i-1].col !== p.col;
+                      const stroke  = n > 1 ? '#334155' : '#475569';
+                      const sw      = n > 1 ? 2 : 2.5;
+
+                      return (
+                        <g key={`line-${line.id}`}>
+                          {/* Bara → ilk düğüm */}
+                          {i === 0 && <line x1={BARA_X} y1={152} x2={p.cx} y2={p.cy} stroke={stroke} strokeWidth={sw} strokeDasharray={n>1?'6,3':'none'}/>}
+                          {/* Aynı sütun: önceki düğümden bu düğüme */}
+                          {sameCol && <line x1={prevX} y1={prevY} x2={p.cx} y2={p.cy} stroke={stroke} strokeWidth={sw} strokeDasharray={n>1?'6,3':'none'}/>}
+                          {/* Sütun geçişi: L şekli */}
+                          {colChg && (
+                            <path d={`M ${prevX} ${prevY} L ${prevX} ${p.cy} L ${p.cx} ${p.cy}`}
+                              fill="none" stroke={stroke} strokeWidth={sw} strokeLinejoin="round"
+                              strokeDasharray={n>1?'6,3':'none'}/>
+                          )}
+                        </g>
+                      );
+                    })}
+
+                    {/* ── Sonra kablo kutuları ve düğümler (çizgilerin üstüne) ── */}
                     {lines.map((line, i) => {
                       const p = pos[i];
                       const cable = cables.find(c => c.id === line.cableTypeId);
                       const n = line.circuitCount || 1;
-                      const ik = ik3vals[i] || 0;
+                      const ik3 = ik3v[i] || 0;
+                      const ik1 = ik1v[i] || 0;
 
-                      // Önceki nokta
-                      let prevX, prevY;
-                      if (i === 0) { prevX = 40 + pos[0].col * COL_W + COL_W/2; prevY = 155; }
-                      else         { prevX = pos[i-1].cx; prevY = pos[i-1].cy; }
+                      // Kablo kutusu: çizginin ortasındaki segment
+                      let prevCY;
+                      if (i === 0) prevCY = 152;
+                      else if (pos[i-1].col === p.col) prevCY = pos[i-1].cy;
+                      else prevCY = pos[i-1].cy;  // sütun geçişinde mevcut satırda
 
-                      const sameCol  = i > 0 && pos[i-1].col === p.col;
-                      const colChg   = i > 0 && pos[i-1].col !== p.col;
-                      const cxFirst  = 40 + COL_W/2;
+                      const midY = p.col === (i > 0 ? pos[i-1].col : 0)
+                        ? (prevCY + p.cy) / 2
+                        : p.cy;  // sütun geçişinde düğümün üstünde
+
+                      // İsmin sağa/sola yönü
+                      const nameRight = p.col % 2 === 0;
 
                       return (
-                        <g key={line.id}>
-                          {/* Bara'dan ilk hat */}
-                          {i === 0 && <line x1={cxFirst} y1="155" x2={cxFirst} y2={p.cy-30} stroke="#334155" strokeWidth="2"/>}
-                          {/* Aynı sütun: düz aşağı */}
-                          {sameCol && (
-                            n > 1
-                              ? <><line x1={prevX-2} y1={prevY} x2={prevX-2} y2={p.cy-30} stroke="#334155" strokeWidth="1.5"/><line x1={prevX+2} y1={prevY} x2={prevX+2} y2={p.cy-30} stroke="#334155" strokeWidth="1.5"/></>
-                              : <line x1={prevX} y1={prevY} x2={p.cx} y2={p.cy-30} stroke="#334155" strokeWidth="2"/>
-                          )}
-                          {/* Sütun geçişi: yatay köprü */}
-                          {colChg && (
-                            <path d={`M ${prevX} ${prevY} L ${prevX} ${p.cy} L ${p.cx} ${p.cy}`}
-                              fill="none" stroke="#334155" strokeWidth="2" strokeLinejoin="round"/>
-                          )}
+                        <g key={`node-${line.id}`}>
+                          {/* Kablo kutusu — beyaz arka plan ile çizginin üstüne */}
+                          <rect x={p.cx-36} y={midY-24} width="72" height="28" rx="4" fill="white" stroke="none"/>
+                          <rect x={p.cx-36} y={midY-24} width="72" height="28" rx="4" fill="#e0f2fe" stroke="#0284c7" strokeWidth="1.2"/>
+                          <text x={p.cx} y={midY-12} textAnchor="middle" fontSize="6.5" fontWeight="bold" fill="#0369a1">{cable?.name||'?'}</text>
+                          <text x={p.cx} y={midY-1}  textAnchor="middle" fontSize="6.5" fill="#0369a1">{line.length}km{n>1?` ×${n}`:''}</text>
 
-                          {/* Kablo kutusu */}
-                          <rect x={p.cx-34} y={p.cy-58} width="68" height="26" rx="4" fill="#e0f2fe" stroke="#0284c7" strokeWidth="1"/>
-                          <text x={p.cx} y={p.cy-46} textAnchor="middle" fontSize="6.5" fontWeight="bold" fill="#0369a1">{cable?.name||'?'}</text>
-                          <text x={p.cx} y={p.cy-36} textAnchor="middle" fontSize="6.5" fill="#0369a1">{line.length}km{n>1?` ×${n}`:''}</text>
+                          {/* Düğüm dairesi */}
+                          <circle cx={p.cx} cy={p.cy} r="6" fill="white" stroke="none"/>
+                          <circle cx={p.cx} cy={p.cy} r="6" fill="#334155"/>
 
-                          {/* Düğüm */}
-                          <circle cx={p.cx} cy={p.cy} r="5" fill="#475569"/>
-                          {/* İsim — sütun yönüne göre sağa/sola */}
-                          {p.col % 2 === 0
-                            ? <text x={p.cx+8} y={p.cy+4} fontSize="8.5" fontWeight="bold" fill="#1e293b">{line.name||`Hat ${i+1}`}</text>
-                            : <text x={p.cx-8} y={p.cy+4} fontSize="8.5" fontWeight="bold" fill="#1e293b" textAnchor="end">{line.name||`Hat ${i+1}`}</text>
+                          {/* İsim */}
+                          {nameRight
+                            ? <text x={p.cx+10} y={p.cy+4} fontSize="9" fontWeight="bold" fill="#1e293b">{line.name||`Hat ${i+1}`}</text>
+                            : <text x={p.cx-10} y={p.cy+4} fontSize="9" fontWeight="bold" fill="#1e293b" textAnchor="end">{line.name||`Hat ${i+1}`}</text>
                           }
-                          {ik > 0 && (
-                            <text x={p.cx} y={p.cy+16} textAnchor="middle" fontSize="7.5" fill="#7c3aed" fontWeight="bold">
-                              {ik.toFixed(2)} kA
+
+                          {/* I₃k ve I₁k */}
+                          {ik3 > 0 && (
+                            <text x={p.cx} y={p.cy+18} textAnchor="middle" fontSize="8" fontWeight="bold" fill="#7c3aed">
+                              {ik3.toFixed(2)} kA
+                            </text>
+                          )}
+                          {ik1 > 0 && (
+                            <text x={p.cx} y={p.cy+29} textAnchor="middle" fontSize="7" fill="#ea580c">
+                              I₁k={ik1.toFixed(2)}kA
                             </text>
                           )}
                         </g>
                       );
                     })}
 
-                    {/* Alt bilgi şeridi */}
-                    <rect x="4" y={SVG_H-38} width={SVG_W-8} height="34" rx="5" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="1"/>
-                    <text x="12" y={SVG_H-22} fontSize="7.5" fontFamily="monospace" fill="#475569">
-                      {`IEC 60909 | c=1.10 | Sb=100MVA | Ub=34.5kV | I₃k bara=${result.busbarCurrent.toFixed(3)}kA | I₃k hat=${result.lineEndCurrent.toFixed(3)}kA`}
+                    {/* Alt bilgi */}
+                    <rect x="4" y={SVG_H-36} width={SVG_W-8} height="32" rx="5" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="1"/>
+                    <text x="12" y={SVG_H-22} fontSize="7" fontFamily="monospace" fill="#475569">
+                      {`IEC 60909 | c=${result.c||1.10} | I₃k bara=${result.busbarCurrent.toFixed(3)}kA | I₃k hat=${result.lineEndCurrent.toFixed(3)}kA`}
                     </text>
-                    <text x="12" y={SVG_H-10} fontSize="7.5" fontFamily="monospace" fill="#64748b">
-                      {result.Ik1_bara > 0 ? `I₁k bara=${result.Ik1_bara.toFixed(3)}kA | I₁k hat sonu=${result.Ik1_end.toFixed(3)}kA | Trafo: ${result.trafoTip||'Dyn'}` : `Z_bara=${result.zBaraPu?.toFixed(5)}pu | Z_top=${result.zTotalPu?.toFixed(5)}pu`}
+                    <text x="12" y={SVG_H-10} fontSize="7" fontFamily="monospace" fill="#64748b">
+                      {result.Ik1_bara>0 ? `I₁k bara=${result.Ik1_bara.toFixed(3)}kA | I₁k hat sonu=${result.Ik1_end.toFixed(3)}kA | Trafo: ${result.trafoTip||'Dyn'}` : 'Faz-toprak: trafo bağlantı tipi seçiniz'}
                     </text>
                   </svg>
                 );
