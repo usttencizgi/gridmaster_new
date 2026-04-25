@@ -212,7 +212,7 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
     const ip_end = kappa * Math.sqrt(2) * ik_end;
     return `
     <tr>
-      <td><b>Hat ${d.idx}</b></td>
+      <td><b>${d.name ? `${d.name}` : ''}</b>${d.name ? `<br><span style="color:#94a3b8;font-weight:400;font-size:8px">Hat ${d.idx}</span>` : `Hat ${d.idx}`}</td>
       <td>${d.cableName}</td>
       <td class="mono">${d.length} km</td>
       <td class="mono">${d.circuitCount}×</td>

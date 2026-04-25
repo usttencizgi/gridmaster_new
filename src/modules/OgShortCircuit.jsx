@@ -366,16 +366,16 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
                 </div>
               )}
               {/* Topraklama yönlendirme butonu */}
-              {result.Ik1_bara > 0 && onGoTopraklama && (
+              {result.Ik1_end > 0 && onGoTopraklama && (
                 <button
-                  onClick={() => onGoTopraklama(result.Ik1_bara)}
+                  onClick={() => onGoTopraklama(result.Ik1_end)}
                   className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-3 text-sm">
                   <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 22V12"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><path d="M8 6l4-4 4 4"/>
                   </svg>
                   Topraklama Hesabını Yap
                   <span className="bg-white/20 px-2 py-0.5 rounded-lg font-mono text-xs">
-                    I"k1 = {result.Ik1_bara.toFixed(3)} kA
+                    I"k1 hat sonu = {result.Ik1_end.toFixed(3)} kA
                   </span>
                 </button>
               )}
