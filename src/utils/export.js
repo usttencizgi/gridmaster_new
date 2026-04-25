@@ -905,3 +905,242 @@ export async function exportGesKabloWord(panel, sistem, dc, strings, ac1, ac2, r
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+// ─── GES TOPRAKLAMA WORD EXPORT ───────────────────────────────────
+export async function exportGesTopraklamaWord(inputs, res) {
+  const {
+    Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+    AlignmentType, BorderStyle, WidthType, ShadingType, PageBreak
+  } = await import('docx');
+
+  const fmt  = (n, d = 3) => (typeof n === 'number' && !isNaN(n) && isFinite(n)) ? n.toFixed(d) : '—';
+  const now  = new Date();
+  const tarih = now.toLocaleDateString('tr-TR', { day:'2-digit', month:'2-digit', year:'numeric' });
+
+  const BD = '1F5C99', WH = 'FFFFFF', GR = 'C6EFCE', GT = '276221',
+        RF = 'FFC7CE', RT = '9C0006', GY = 'F2F2F2', BL = 'D6E4F0';
+
+  const sb = (c = 'AAAAAA') => ({ style: BorderStyle.SINGLE, size: 4, color: c });
+  const ab = () => ({ top: sb(), bottom: sb(), left: sb(), right: sb() });
+
+  function mc(text, { bold=false, fill=WH, tc='222222', align=AlignmentType.LEFT, colspan=1, w=null }={}) {
+    return new TableCell({
+      columnSpan: colspan, borders: ab(),
+      shading: { fill, type: ShadingType.CLEAR },
+      margins: { top: 55, bottom: 55, left: 100, right: 100 },
+      ...(w ? { width: { size: w, type: WidthType.DXA } } : {}),
+      children: [new Paragraph({ alignment: align,
+        children: [new TextRun({ text: String(text), bold, color: tc, font: 'Arial', size: 19 })] }) ]
+    });
+  }
+  const hRow = (labels, widths) => new TableRow({ tableHeader: true,
+    children: labels.map((l, i) => mc(l, { bold: true, fill: BD, tc: WH, w: widths[i] })) });
+  const dRow = (...cells) => new TableRow({ children: cells });
+  const okC  = ok => mc(ok ? '✓  UYGUN' : '✗  UYGUN DEĞİL', {
+    bold: true, align: AlignmentType.CENTER,
+    fill: ok ? GR : RF, tc: ok ? GT : RT });
+
+  const hdg = text => new Paragraph({
+    spacing: { before: 280, after: 120 },
+    border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: BD, space: 2 } },
+    children: [new TextRun({ text, bold: true, font: 'Arial', size: 26, color: BD })] });
+
+  const subh = text => new Paragraph({
+    spacing: { before: 180, after: 80 },
+    children: [new TextRun({ text, bold: true, font: 'Arial', size: 21, color: '2E4057' })] });
+
+  const ln = (text, bold = false) => new Paragraph({
+    spacing: { before: 40, after: 40 },
+    children: [new TextRun({ text, bold, font: 'Arial', size: 19, color: '222222' })] });
+
+  const fml = text => new Paragraph({
+    spacing: { before: 28, after: 28 }, indent: { left: 500 },
+    children: [new TextRun({ text, font: 'Courier New', size: 18, color: '1F5C99' })] });
+
+  const bl = () => new Paragraph({ spacing: { before: 40, after: 40 }, children: [] });
+  const pg = () => new Paragraph({ children: [new PageBreak()] });
+
+  const mod = inputs.mod || res.mod;
+  const Ik1_A = (inputs.Ik1 || 0) * 1000;
+  const rLabel = ['Sadece havai hat (r=0.6)', 'Karma (havai+yer altı) (r=0.45)', 'Sadece yer altı kablo (r=0.3)'][inputs.rIdx || 2];
+
+  const children = [
+    // Başlık
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 200, after: 60 },
+      children: [new TextRun({ text: 'TOPRAKLAMA VE DOKUNMA GERİLİMİ HESABI', bold: true, font: 'Arial', size: 30, color: BD })] }),
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 300 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: BD, space: 2 } },
+      children: [new TextRun({ text: `${mod === 'arazi' ? 'Arazi GES' : 'Çatı GES'}  —  ETT Yönetmeliği · IEC EN 50522  —  ${tarih}`, font: 'Arial', size: 20, color: '555555' })] }),
+
+    // 1. Giriş Verileri
+    hdg('1.  GENEL GİRİŞ VERİLERİ'), bl(),
+    new Table({ width: { size: 9100, type: WidthType.DXA }, columnWidths: [4000, 2600, 2500],
+      rows: [
+        hRow(['Parametre', 'Değer', 'Açıklama'], [4000, 2600, 2500]),
+        dRow(mc('Faz-Toprak Arıza Akımı I"k1'), mc(`${fmt(inputs.Ik1,3)} kA = ${Ik1_A.toFixed(0)} A`, {bold:true}), mc('OG Kısa Devre Hesaplarından')),
+        dRow(mc('Hata Temizleme Süresi t'),      mc(`${inputs.t} s`, {bold:true}),    mc('Arıza süresi')),
+        dRow(mc('Toprak Özgül Direnci ρE'),       mc(`${inputs.rhoE} Ω·m`, {bold:true}), mc('Zemin ölçüm/tablodan')),
+        dRow(mc('Bölünme Katsayısı r'),           mc(`r = ${[0.6,0.45,0.3][inputs.rIdx||2]}`, {bold:true}), mc(rLabel)),
+        dRow(mc('Evirici Sayısı (pano başına)'),  mc(`${inputs.nInv} adet`, {bold:true}), mc('RCD kontrolü için')),
+        dRow(mc('Topraktan Geçen Akım It = r × Ik1'), mc(`${fmt(res.It,1)} A`, {bold:true, fill:BL}), mc('')),
+      ]
+    }),
+
+    bl(), pg(),
+
+    // 2. Topraklama Direnç Hesapları
+    hdg('2.  TOPRAKLAMA DİREÇ HESAPLARI'), bl(),
+
+    // Arazi modu
+    ...(mod === 'arazi' ? [
+      subh('2.1  GES Santral Sahası'), bl(),
+      ...(inputs.saha?.seritAktif && res.sahaSon?.Rg != null ? [
+        ln('Şerit Topraklayıcı Direnci:', true),
+        fml(`A = a × b = ${inputs.saha.a} × ${inputs.saha.b} = ${(inputs.saha.a*inputs.saha.b).toFixed(0)} m²`),
+        fml(`D = √(4×A/π) = √(4×${(inputs.saha.a*inputs.saha.b).toFixed(0)}/π) = ${fmt(res.sahaSon.D,2)} m`),
+        fml(`Rg = ρ/(2×D) + ρ/L = ${inputs.rhoE}/(2×${fmt(res.sahaSon.D,2)}) + ${inputs.rhoE}/${inputs.saha.L} = ${fmt(res.sahaSon.Rg,3)} Ω`),
+        bl(),
+      ] : []),
+      ...(inputs.saha?.kazikAktif && res.sahaSon?.Rç != null ? [
+        ln('Topraklama Kazığı Direnci:', true),
+        fml(`Rç_tek = [ρ/(2π×Lç)] × ln(4×Lç/dç) = [${inputs.rhoE}/(2π×${inputs.saha.Lc})] × ln(4×${inputs.saha.Lc}/${inputs.saha.dc}) = ${fmt(res.sahaSon.Rc_tek,3)} Ω`),
+        fml(`Rç = Rç_tek / n = ${fmt(res.sahaSon.Rc_tek,3)} / ${inputs.saha.n} = ${fmt(res.sahaSon.Rç,3)} Ω`),
+        bl(),
+      ] : []),
+      ...(inputs.saha?.seritAktif && inputs.saha?.kazikAktif && res.sahaSon?.Rg && res.sahaSon?.Rç ? [
+        ln('Saha Eşdeğer Direnci:', true),
+        fml(`Reş_ham = Rg×Rç/(Rg+Rç) = ${fmt(res.sahaSon.Rg,3)}×${fmt(res.sahaSon.Rç,3)}/(${fmt(res.sahaSon.Rg,3)}+${fmt(res.sahaSon.Rç,3)}) = ${fmt(res.sahaSon.Rg*res.sahaSon.Rç/(res.sahaSon.Rg+res.sahaSon.Rç),3)} Ω`),
+        ln('Topraklama çubuklarıyla ağın birbirinin etkisinin giderme payı %10 alınırsa:'),
+        fml(`Reş_saha = Reş_ham × 1,10 = ${fmt(res.sahaSon.Rg*res.sahaSon.Rç/(res.sahaSon.Rg+res.sahaSon.Rç),3)} × 1,10 = ${fmt(res.sahaSon.Res,3)} Ω`),
+        bl(),
+      ] : []),
+
+      // Köşkler
+      ...((inputs.koskler||[]).flatMap((ko, i) => {
+        const ks = res.koskSon?.[i];
+        if (!ks) return [];
+        return [
+          subh(`2.${i+2}  ${ko.isim || `Trafo Köşkü ${i+1}`}`), bl(),
+          ...(ko.seritAktif && ks.Rg != null ? [
+            fml(`D = √(4×${ko.a}×${ko.b}/π) = ${fmt(ks.D,2)} m`),
+            fml(`Rg = ${inputs.rhoE}/(2×${fmt(ks.D,2)}) + ${inputs.rhoE}/${ko.L} = ${fmt(ks.Rg,3)} Ω`),
+          ] : []),
+          ...(ko.kazikAktif && ks.Rç != null ? [
+            fml(`Rç_tek = ${fmt(ks.Rc_tek,3)} Ω  →  Rç = ${fmt(ks.Rc_tek,3)}/${ko.n} = ${fmt(ks.Rç,3)} Ω`),
+          ] : []),
+          ...(ko.seritAktif && ko.kazikAktif && ks.Rg && ks.Rç ? [
+            fml(`Reş_ham = ${fmt(ks.Rg,3)}×${fmt(ks.Rç,3)}/(${fmt(ks.Rg,3)}+${fmt(ks.Rç,3)}) × 1,10 = ${fmt(ks.Res,3)} Ω`),
+          ] : []),
+          bl(),
+        ];
+      })),
+
+      // Final
+      subh(`2.${(inputs.koskler||[]).length+2}  Final Eşdeğer Direnç (Paralel Kombinasyon)`),
+      ln('Tüm topraklama sistemleri paralel bağlandığında:'),
+      fml(`1/Reş = 1/${fmt(res.sahaSon?.Res,3)} + ${(res.koskSon||[]).map((ks,i)=>`1/${fmt(ks?.Res,3)}`).join(' + ')}`),
+      fml(`Reş = ${fmt(res.finalRes,3)} Ω`),
+
+    ] : [
+      // Çatı modu
+      subh('2.1  Mevcut Bina Topraklaması'), bl(),
+      fml(`R_mevcut = ${fmt(inputs.Rmevcut,3)} Ω  (ölçülen/verilen değer)`),
+      bl(),
+      subh('2.2  Çatı Eşpotansiyel Şeridi'), bl(),
+      ln(`${inputs.catiSerit?.L || 0} m ${inputs.catiSerit?.kesit || '30×3.5 mm Galvaniz Şerit'} — gömülü elektrot değildir.`),
+      ln('Panel çerçevelerini eşpotansiyele bağlar. Zemine karşı direnci mevcut topraklama üzerinden sağlanır.'),
+      bl(),
+      ...(inputs.catiKazik?.aktif && res.Rç ? [
+        subh('2.3  İlave Topraklama Kazıkları'), bl(),
+        fml(`Rç_tek = [${inputs.rhoE}/(2π×${inputs.catiKazik.Lc})] × ln(4×${inputs.catiKazik.Lc}/${inputs.catiKazik.dc}) = ${fmt(inputs.catiKazik.n>0?((inputs.rhoE/(2*Math.PI*inputs.catiKazik.Lc))*Math.log(4*inputs.catiKazik.Lc/inputs.catiKazik.dc)):0,3)} Ω`),
+        fml(`Rç = Rç_tek / ${inputs.catiKazik.n} = ${fmt(res.Rç,3)} Ω`),
+        bl(),
+        fml(`Reş = (R_mevcut × Rç)/(R_mevcut + Rç) × 1,10 = ${fmt(res.finalRes,3)} Ω`),
+      ] : [
+        bl(),
+        fml(`Reş = R_mevcut = ${fmt(res.finalRes,3)} Ω`),
+      ]),
+    ]),
+
+    bl(), pg(),
+
+    // 3. Dokunma Gerilimi
+    hdg('3.  DOKUNMA GERİLİMİ KONTROLÜ'), bl(),
+    ln(`Topraktan geçen arıza akımı It = r × Ik1 formülü ile belirlenir.`),
+    ln(`Tesiste ${rLabel.toLowerCase()} için bölünme katsayısı r = ${[0.6,0.45,0.3][inputs.rIdx||2]} alınmıştır.`),
+    bl(),
+    fml(`It = r × Ik1 = ${[0.6,0.45,0.3][inputs.rIdx||2]} × ${Ik1_A.toFixed(0)} = ${fmt(res.It,1)} A`),
+    bl(),
+    fml(`UE = IT × Reş = ${fmt(res.It,1)} × ${fmt(res.finalRes,3)} = ${fmt(res.UE,3)} V`),
+    bl(),
+    ln(`${inputs.t} sn için izin verilen en yüksek dokunma gerilimi ${res.Utp} V olduğundan,`),
+    bl(),
+    new Table({ width: { size: 9100, type: WidthType.DXA }, columnWidths: [2500,1800,1800,3000],
+      rows: [
+        hRow(['Kontrol', 'UE (V)', '2×UTP (V)', 'Sonuç'], [2500,1800,1800,3000]),
+        dRow(
+          mc(`Dokunma Gerilimi — t = ${inputs.t} s`),
+          mc(fmt(res.UE,2), { bold: true, align: AlignmentType.CENTER }),
+          mc(String(res.Utp*2), { align: AlignmentType.CENTER }),
+          okC(res.dok_ok)
+        ),
+      ]
+    }),
+    bl(),
+    ln(`${fmt(res.UE,3)} V (UE) ${res.dok_ok ? '<' : '>'} ${res.Utp*2} V (2×UTP) olduğundan, topraklama sistemi dokunma gerilimi yönünden ${res.dok_ok ? 'UYGUNDUR.' : 'UYGUN DEĞİLDİR.'}`, true),
+    bl(),
+    ...(res.dok_ok ? [
+      ln('* Dokunma gerilimine göre topraklama sistemi uygun olduğu için adım gerilimine bakmaya gerek yoktur.', false),
+    ] : []),
+
+    bl(), pg(),
+
+    // 4. İletken Kesit
+    hdg('4.  TOPRAKLAMA İLETKENİ MİNİMUM KESİTİ'), bl(),
+    subh('4.1  Koruma İletkeni Kesiti (Çıplak Bakır, k=115)'),
+    fml(`S = Ik1 × √t / k = ${Ik1_A.toFixed(0)} × √${inputs.t} / 115 = ${fmt(res.q_hesap,2)} mm²`),
+    ln(`→ Seçilen: ${res.q_sec} mm² Çıplak Bakır İletken`),
+    bl(),
+    subh('4.2  Topraklama Şeridi Minimum Kesiti (ETT Yönetmeliği Çizelge-4a)'),
+    ln('Topraklamalar yönetmeliği Çizelge-4a\'ya göre galvaniz şerit için belirlenen minimum kesit 50 mm² dir.'),
+    fml(`Seçilen: 30×3,5 mm Galvanizli Çelik Şerit  →  A = 30×3,5 = 105 mm² > 50 mm²  ✓`),
+
+    bl(), pg(),
+
+    // 5. Kaçak Akım
+    hdg('5.  KAÇAK AKIM RÖLESİ KONTROLÜ (Normal İşletme)'), bl(),
+    ln('TT sistemlerde UL = 50 V olacağından:'),
+    fml(`Reş × Ia ≤ 50V  →  Reş ≤ 50 / (n_inv × 0,3 A/evirici)`),
+    fml(`${fmt(res.finalRes,3)} Ω ≤ 50 / (${inputs.nInv} × 0,3) = ${fmt(50/(inputs.nInv*0.3),2)} Ω`),
+    bl(),
+    new Table({ width: { size: 9100, type: WidthType.DXA }, columnWidths: [2500,2200,2200,2200],
+      rows: [
+        hRow(['Kontrol', 'Reş (Ω)', 'Eşik (Ω)', 'Sonuç'], [2500,2200,2200,2200]),
+        dRow(
+          mc(`RCD Direnci — ${inputs.nInv} evirici`),
+          mc(fmt(res.finalRes,3), { bold: true, align: AlignmentType.CENTER }),
+          mc(fmt(50/(inputs.nInv*0.3),2), { align: AlignmentType.CENTER }),
+          okC(res.rcd_ok)
+        ),
+      ]
+    }),
+    bl(),
+    ln('Kaçak akım rölesi (RCD) kullanımı zorunludur.'),
+  ];
+
+  const doc = new Document({
+    styles: { default: { document: { run: { font: 'Arial', size: 19 } } } },
+    sections: [{
+      properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1000, right: 900, bottom: 1000, left: 900 } } },
+      children
+    }]
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `GES_Topraklama_Hesabi_${new Date().toLocaleDateString('tr-TR').replace(/\./g,'-')}.docx`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}

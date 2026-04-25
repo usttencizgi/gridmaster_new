@@ -60,9 +60,17 @@ function calcBirim({ rhoE, seritAktif, a, b, L, kazikAktif, n, Lc, dc }) {
     const c = calcRc(rhoE, n, Lc, dc);
     Rc_tek = c.Rc_tek; Rç = c.Rç;
   }
-  if (Rg !== null && Rç !== null)      Res = (Rg * Rç / (Rg + Rç)) * 1.10;
-  else if (Rg !== null)                Res = Rg;
-  else if (Rç !== null)                Res = Rç;
+  // ETT Yönetmeliği sf.83:
+  // Reş = (Rg×Rç)/(Rg+Rç) → sonra ×1.10 (müşterek etki)
+  // Tek eleman varsa ×1.10 uygulanmaz
+  if (Rg !== null && Rç !== null) {
+    const ham = (Rg * Rç) / (Rg + Rç);
+    Res = ham * 1.10;
+  } else if (Rg !== null) {
+    Res = Rg;
+  } else if (Rç !== null) {
+    Res = Rç;
+  }
   return { Rg, D, Rc_tek, Rç, Res };
 }
 
@@ -319,10 +327,24 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
             <p className="text-emerald-100 text-sm">ETT Yönetmeliği · IEC EN 50522 · Dokunma Gerilimi Kontrolü</p>
           </div>
         </div>
-        <button onClick={hesapla}
-          className="bg-white text-emerald-700 font-black py-2.5 px-8 rounded-xl shadow-lg hover:scale-105 transition-all text-sm">
-          HESAPLA
-        </button>
+        <div className="flex gap-2">
+          <button onClick={hesapla}
+            className="bg-white text-emerald-700 font-black py-2.5 px-8 rounded-xl shadow-lg hover:scale-105 transition-all text-sm">
+            HESAPLA
+          </button>
+          {res && (
+            <button onClick={async () => {
+              const { exportGesTopraklamaWord } = await import('../utils/export.js');
+              exportGesTopraklamaWord(
+                { mod, Ik1, rIdx, rhoE, t, nInv, saha, koskler, Rmevcut, catiSerit, catiKazik },
+                res
+              );
+            }}
+              className="bg-white/20 hover:bg-white/30 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all">
+              📄 Word
+            </button>
+          )}
+        </div>
       </div>
 
       {/* MOD SEÇİMİ */}
@@ -542,7 +564,7 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
                       </div>
                     ))}
                     <div className="text-[10px] font-mono text-slate-400 px-1">
-                      Final Reş = paralel({[res.sahaSon?.Res, ...(res.koskSon||[]).map(k=>k?.Res)].filter(Boolean).map(v=>v?.toFixed(3)).join(', ')}) = <b>{res.finalRes?.toFixed(3)} Ω</b>
+                      1/Reş = {[res.sahaSon?.Res, ...(res.koskSon||[]).map(k=>k?.Res)].filter(Boolean).map(v=>`1/${v?.toFixed(3)}`).join(' + ')} → Reş = <b>{res.finalRes?.toFixed(3)} Ω</b>
                     </div>
                   </div>
                 )}
