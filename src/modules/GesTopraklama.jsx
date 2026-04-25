@@ -119,6 +119,91 @@ function SCard({ ok, label, val, op, lim, unit, sub }) {
   );
 }
 
+// G kesit eğrisi — G = k/√t, 4 farklı malzeme
+// Kaynak: ETT Yönetmeliği / IEC 60364-5-54 Çizelge
+const K_CURVES = [
+  { k: 180, label: '1 — Galv. Çelik Şerit (k=180)', color: '#1e3a5f', dash: '' },
+  { k: 143, label: '2 — XLPE Cu (k=143)',            color: '#3b82f6', dash: '6,3' },
+  { k: 115, label: '3 — Çıplak Cu, PVC (k=115)',     color: '#10b981', dash: '3,3' },
+  { k:  76, label: '4 — Al İletken (k=76)',           color: '#f59e0b', dash: '8,3,2,3' },
+];
+
+function GKesitGraph({ t, q_hesap, Ik1_A }) {
+  const W=360, H=180, lx=55, rx=W-15, ty=12, by=H-28;
+  const tMin=0.05, tMax=10, GMin=10, GMax=2000;
+
+  const tx = tv => lx + (Math.log10(tv)-Math.log10(tMin))/(Math.log10(tMax)-Math.log10(tMin))*(rx-lx);
+  const gy  = gv => by - (Math.log10(Math.max(gv,GMin))-Math.log10(GMin))/(Math.log10(GMax)-Math.log10(GMin))*(by-ty);
+
+  const tGrid = [0.06,0.08,0.1,0.2,0.4,0.6,0.8,1,2,4,6,8,10];
+  const gGrid = [10,20,40,60,80,100,150,200,300,400,600,800,1000,2000];
+
+  const curvePoints = (k) => {
+    const pts = [];
+    for (let i=0; i<=80; i++) {
+      const tv = Math.pow(10, Math.log10(tMin) + i/80*(Math.log10(tMax)-Math.log10(tMin)));
+      const gv = k / Math.sqrt(tv);
+      if (gv >= GMin && gv <= GMax*2) pts.push(`${tx(tv).toFixed(1)},${gy(gv).toFixed(1)}`);
+    }
+    return pts.join(' ');
+  };
+
+  // Mevcut t noktası
+  const G_seçili = 115 / Math.sqrt(t); // k=115 eğrisinde
+  const G_hesap  = Ik1_A > 0 ? Ik1_A / Math.sqrt(t) : null; // gerekli G
+
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full">
+      <rect width={W} height={H} fill="#f8fafc" rx="6"/>
+      <text x={W/2} y={10} textAnchor="middle" fontSize="8" fontWeight="bold" fill="#334155">
+        G — İletken Isınma Kapasitesi (A/mm²) vs Arıza Süresi t_F (s)
+      </text>
+      {/* Grid */}
+      {tGrid.map(tv=>(
+        <g key={tv}>
+          <line x1={tx(tv)} y1={ty} x2={tx(tv)} y2={by} stroke="#e2e8f0" strokeWidth="0.5"/>
+          <text x={tx(tv)} y={H-16} textAnchor="middle" fontSize="6" fill="#94a3b8">{tv}</text>
+        </g>
+      ))}
+      {gGrid.map(gv=>(
+        <g key={gv}>
+          <line x1={lx} y1={gy(gv)} x2={rx} y2={gy(gv)} stroke="#e2e8f0" strokeWidth="0.5"/>
+          <text x={lx-3} y={gy(gv)+2.5} textAnchor="end" fontSize="6" fill="#94a3b8">{gv}</text>
+        </g>
+      ))}
+      <line x1={lx} y1={ty} x2={lx} y2={by} stroke="#64748b" strokeWidth="1"/>
+      <line x1={lx} y1={by} x2={rx} y2={by} stroke="#64748b" strokeWidth="1"/>
+      <text x={rx+2}  y={by}    fontSize="6" fill="#64748b">s</text>
+      <text x={lx-2}  y={ty-1}  fontSize="6" fill="#64748b" textAnchor="end">A/mm²</text>
+      {/* Eğriler */}
+      {K_CURVES.map(c=>(
+        <polyline key={c.k} points={curvePoints(c.k)} fill="none"
+          stroke={c.color} strokeWidth="1.8" strokeDasharray={c.dash} strokeLinejoin="round"/>
+      ))}
+      {/* Seçili t noktası */}
+      {t >= tMin && t <= tMax && (
+        <>
+          <line x1={tx(t)} y1={ty} x2={tx(t)} y2={by} stroke="#ef4444" strokeWidth="1.2" strokeDasharray="3,2"/>
+          <text x={tx(t)+3} y={ty+10} fontSize="7" fill="#ef4444" fontWeight="bold">t={t}s</text>
+          {G_hesap && G_hesap <= GMax && (
+            <circle cx={tx(t)} cy={gy(G_hesap)} r="3.5" fill="#ef4444" stroke="white" strokeWidth="1"/>
+          )}
+        </>
+      )}
+      {/* Lejant */}
+      {K_CURVES.map((c,i)=>(
+        <g key={i} transform={`translate(${lx+4},${by-60+i*12})`}>
+          <line x1="0" y1="4" x2="14" y2="4" stroke={c.color} strokeWidth="1.8" strokeDasharray={c.dash}/>
+          <text x="17" y="7" fontSize="6" fill="#334155">{c.label}</text>
+        </g>
+      ))}
+      <text x={lx-50} y={(ty+by)/2} fontSize="7" fill="#475569" fontWeight="bold"
+        transform={`rotate(-90,${lx-50},${(ty+by)/2})`} textAnchor="middle">G (A/mm²)</text>
+      <text x={(lx+rx)/2} y={H-5} fontSize="7" fill="#475569">t_F (s)</text>
+    </svg>
+  );
+}
+
 function UtpGraph({ t, Utp, UE }) {
   const W=360, H=150, lx=38, rx=W-10, ty_=18, by=H-20;
   const tx = tv => lx + (Math.log10(tv)-Math.log10(0.03))/(Math.log10(10)-Math.log10(0.03))*(rx-lx);
@@ -290,20 +375,38 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
       const finalRes = paralelAll(tumRes);
       const It = r * Ik1_A;
       const UE = finalRes * It;
+
+      // Arazi adım gerilimi: saha sınırında, mesh eşdeğer yarıçapı kullanılarak
+      // Ua = ρ×It/(2π) × (1/r_mesh - 1/(r_mesh+1))  [TS EN 50522]
+      const A_saha = saha.a * saha.b;
+      const r_mesh = Math.sqrt(A_saha / Math.PI); // eşdeğer daire yarıçapı
+      const Ua_sinir = r_mesh > 0
+        ? (rhoE * It / (2 * Math.PI)) * (1/r_mesh - 1/(r_mesh+1))
+        : (rhoE * It) / (4 * Math.PI);
+
       setRes({ mod: 'arazi', sahaSon, koskSon, finalRes, It, UE, Utp,
-               dok_ok: UE < 2*Utp, rcd_ok: finalRes <= 50/(nInv*0.3),
+               dok_ok: UE < 2*Utp,
+               adim_ok: Ua_sinir <= LIMITS[t]?.Ua,
+               Ua_sinir, r_mesh,
+               rcd_ok: finalRes <= 50/(nInv*0.3),
                q_hesap, q_sec, Ik1_A });
     } else {
+      // ÇATI: ×1.10 UYGULANMAZ
+      // Rmevcut bina toprağı + kazık → saf paralel bağlantı
+      // ×1.10 sadece TASARLANMIŞ mesh + kazık sistemlerinde geçerlidir (ETT sf.83)
       const { Rç } = catiKazik.aktif && catiKazik.n > 0
         ? calcRc(rhoE, catiKazik.n, catiKazik.Lc, catiKazik.dc)
         : { Rç: null };
       const aktifler = [Rmevcut, Rç].filter(x => x && isFinite(x));
-      const Res_ham  = paralelAll(aktifler);
-      const finalRes = aktifler.length > 1 ? Res_ham * 1.10 : Res_ham;
+      const finalRes = paralelAll(aktifler); // ×1.10 YOK — çatı modu
       const It = r * Ik1_A;
       const UE = finalRes * It;
+      // Çatı: adım gerilimi uygulanamaz (yüzey eşpotansiyel)
       setRes({ mod: 'cati', finalRes, Rç, It, UE, Utp,
-               dok_ok: UE < 2*Utp, rcd_ok: finalRes <= 50/(nInv*0.3),
+               dok_ok: UE < 2*Utp,
+               adim_ok: null,    // N/A — çatı eşpotansiyel yüzey
+               Ua_sinir: null,
+               rcd_ok: finalRes <= 50/(nInv*0.3),
                q_hesap, q_sec, Ik1_A });
     }
   };
@@ -628,6 +731,38 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
                     ✓ Dokunma gerilimine göre topraklama sistemi uygun olduğu için adım gerilimine bakmaya gerek yoktur.
                   </div>
                 )}
+                {!res.dok_ok && (
+                  <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-700">
+                    ✗ Dokunma gerilimi aşılıyor. Reş düşürülmeli (daha fazla kazık / daha büyük saha ağı).
+                  </div>
+                )}
+              </div>
+
+              {/* Adım Gerilimi — arazi için göster, çatı için N/A */}
+              <div className="bg-white p-5 rounded-xl border">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-3 h-3 rounded-full bg-blue-400"/>
+                  <h3 className="font-black text-slate-700 text-sm uppercase">Adım Gerilimi Kontrolü</h3>
+                </div>
+                {res.adim_ok === null ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-center">
+                    <div className="text-sm font-bold text-slate-500">Uygulanamaz — Çatı Tesisi</div>
+                    <div className="text-xs text-slate-400 mt-1.5 max-w-sm mx-auto">
+                      Çatı yüzeyi eşpotansiyel bağlantı ile tek potansiyelde tutulduğundan
+                      adım gerilimi oluşmaz. IEC 60364-7-712 kapsamında kontrol gerekmez.
+                    </div>
+                  </div>
+                ) : (
+                  <SCard
+                    ok={res.adim_ok}
+                    label={`Saha Sınırı Adım Gerilimi — t = ${t} s   (r_mesh = ${res.r_mesh?.toFixed(1)} m)`}
+                    val={res.Ua_sinir}
+                    op="<"
+                    lim={LIMITS[t]?.Ua}
+                    unit="V"
+                    sub={`Ua = ρ×It/(2π) × (1/r − 1/(r+1)) = ${rhoE}×${res.It?.toFixed(1)}/(2π) × (1/${res.r_mesh?.toFixed(1)} − 1/${(res.r_mesh+1)?.toFixed(1)}) = ${res.Ua_sinir?.toFixed(1)} V`}
+                  />
+                )}
               </div>
 
               {/* İletken Kesit */}
@@ -637,7 +772,8 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
                   <h3 className="font-black text-slate-700 text-sm uppercase">Topraklama İletkeni Minimum Kesiti</h3>
                   <span className="ml-auto text-[10px] text-slate-400">k = 115 A/mm² (çıplak Cu)</span>
                 </div>
-                <div className="bg-slate-50 rounded-lg px-4 py-3 font-mono text-sm mb-3">
+                <GKesitGraph t={t} q_hesap={res.q_hesap} Ik1_A={res.Ik1_A}/>
+                <div className="mt-3 bg-slate-50 rounded-lg px-4 py-3 font-mono text-sm mb-3">
                   S = Ik1 × √t / k = {(Ik1*1000).toFixed(0)} × √{t} / 115 = <b>{res.q_hesap?.toFixed(2)} mm²</b>
                 </div>
                 <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between">

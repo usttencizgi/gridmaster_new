@@ -1276,6 +1276,45 @@ export async function exportGesTopraklamaWord(inputs, res) {
 
     bl(), pg(),
 
+    // 3.5. Grafikler
+    hdg('3.  REFERANS GRAFİKLER'), bl(),
+
+    // UTP grafiği açıklaması
+    subh('3.1  Sınırlı Akım Süreleri için İzin Verilen Dokunma Gerilimleri (ETT Yönetmeliği)'),
+    new Table({ width:{ size:9100, type:WidthType.DXA }, columnWidths:[2500,6600],
+      rows:[dRow(
+        mc('Seçilen t değeri', { bold:true, fill:'F1F5F9' }),
+        mc(`t = ${inputs.t} s  →  UTP = ${res.Utp} V  →  2×UTP = ${res.Utp*2} V`, { bold:true })
+      ), dRow(
+        mc('Hesaplanan UE', { bold:true, fill:'F1F5F9' }),
+        mc(`UE = ${fmt(res.UE,2)} V  ${res.dok_ok?'<':'>'} 2×UTP = ${res.Utp*2} V  →  ${res.dok_ok?'UYGUN':'UYGUN DEĞİL'}`, { bold:true, tc: res.dok_ok?'276221':'9C0006' })
+      ), dRow(
+        mc('t = 0.5 s için', { fill:'F1F5F9' }), mc('UTP = 200 V  →  2×UTP = 400 V')
+      ), dRow(
+        mc('t = 1.0 s için', { fill:'F1F5F9' }), mc('UTP = 100 V  →  2×UTP = 200 V')
+      ), dRow(
+        mc('t = 2.0 s için', { fill:'F1F5F9' }), mc('UTP = 75 V  →  2×UTP = 150 V')
+      )]
+    }),
+    bl(),
+
+    // G grafiği açıklaması
+    subh('3.2  İletken Isınma Kapasitesi G (A/mm²) — Kesit Seçim Tablosu'),
+    new Table({ width:{ size:9100, type:WidthType.DXA }, columnWidths:[500,2500,1800,1800,2500],
+      rows:[
+        hRow(['Eğri', 'Malzeme / Yalıtım Tipi', 'k (A/mm²)', 'Başlangıç °C', 'Son °C'], [500,2500,1800,1800,2500]),
+        dRow( mc('1',{align:'center'}), mc('Galvanizli Çelik Şerit (topraklama şeridi)'), mc('180',{align:'center',bold:true}), mc('—',{align:'center'}), mc('300°C',{align:'center'}) ),
+        dRow( mc('2',{align:'center'}), mc('XLPE/EPR izoleli Bakır iletken'), mc('143',{align:'center',bold:true}), mc('90°C',{align:'center'}), mc('250°C',{align:'center'}) ),
+        dRow( mc('3',{align:'center',fill:'DDF4E8'}), mc('Çıplak Bakır / PVC izoleli Bakır (hesapta kullanılan)', {fill:'DDF4E8'}), mc('115',{align:'center',bold:true,fill:'DDF4E8',tc:'276221'}), mc('70°C',{align:'center',fill:'DDF4E8'}), mc('160°C',{align:'center',fill:'DDF4E8'}) ),
+        dRow( mc('4',{align:'center'}), mc('Alüminyum iletken'), mc('76',{align:'center',bold:true}), mc('—',{align:'center'}), mc('300°C',{align:'center'}) ),
+        dRow( mc('—',{align:'center',fill:'FFF7ED'}), mc('Bu hesapta (k=115, t='+inputs.t+'s)',{fill:'FFF7ED'}), mc('115',{align:'center',bold:true,fill:'FFF7ED'}), mc('',{fill:'FFF7ED'}), mc(`S = ${fmt(res.q_hesap,2)} mm² → ${res.q_sec} mm²`,{bold:true,tc:'C2410C',fill:'FFF7ED'}) ),
+      ]
+    }),
+    ln('Formül: S = Ik1 × √t / k   [S: mm², Ik1: A, t: s, k: A/mm² (malzeme katsayısı)]'),
+    bl(),
+
+    bl(), pg(),
+
     // 4. İletken Kesit
     hdg('4.  TOPRAKLAMA İLETKENİ MİNİMUM KESİTİ'), bl(),
     subh('4.1  Koruma İletkeni Kesiti (Çıplak Bakır, k=115)'),
