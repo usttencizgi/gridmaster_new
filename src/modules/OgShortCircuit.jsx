@@ -574,47 +574,66 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
                       const ik3 = ik3v[i] || 0;
                       const ik1 = ik1v[i] || 0;
 
-                      // Kablo kutusu: çizginin ortasındaki segment
-                      let prevCY;
-                      if (i === 0) prevCY = 152;
-                      else if (pos[i-1].col === p.col) prevCY = pos[i-1].cy;
-                      else prevCY = pos[i-1].cy;  // sütun geçişinde mevcut satırda
+                      // Kablo kutusunun Y merkezi: önceki düğüm ile bu düğüm arası
+                      let prevCY = i===0 ? 152 : pos[i-1].cy;
+                      // Sütun geçişinde kablo kutusu bu düğümün üstünde
+                      const sameCol2 = i===0 || pos[i-1].col === p.col;
+                      const midY = sameCol2 ? (prevCY + p.cy) / 2 : p.cy - 30;
 
-                      const midY = p.col === (i > 0 ? pos[i-1].col : 0)
-                        ? (prevCY + p.cy) / 2
-                        : p.cy;  // sütun geçişinde düğümün üstünde
-
-                      // İsmin sağa/sola yönü
+                      // isim yönü: çift sütun → sağ, tek → sol
                       const nameRight = p.col % 2 === 0;
+                      // kA değerleri: isimle aynı tarafta, ismin altında
+                      const kx = nameRight ? p.cx + 10 : p.cx - 10;
+                      const kAnchor = nameRight ? 'start' : 'end';
+
+                      // EK node mu?
+                      const isEk = line.isEk || (line.name === 'EK' && line.length === 0);
 
                       return (
                         <g key={`node-${line.id}`}>
-                          {/* Kablo kutusu — beyaz arka plan ile çizginin üstüne */}
-                          <rect x={p.cx-36} y={midY-24} width="72" height="28" rx="4" fill="white" stroke="none"/>
-                          <rect x={p.cx-36} y={midY-24} width="72" height="28" rx="4" fill="#e0f2fe" stroke="#0284c7" strokeWidth="1.2"/>
-                          <text x={p.cx} y={midY-12} textAnchor="middle" fontSize="6.5" fontWeight="bold" fill="#0369a1">{cable?.name||'?'}</text>
-                          <text x={p.cx} y={midY-1}  textAnchor="middle" fontSize="6.5" fill="#0369a1">{line.length}km{n>1?` ×${n}`:''}</text>
-
-                          {/* Düğüm dairesi */}
-                          <circle cx={p.cx} cy={p.cy} r="6" fill="white" stroke="none"/>
-                          <circle cx={p.cx} cy={p.cy} r="6" fill="#334155"/>
-
-                          {/* İsim */}
-                          {nameRight
-                            ? <text x={p.cx+10} y={p.cy+4} fontSize="9" fontWeight="bold" fill="#1e293b">{line.name||`Hat ${i+1}`}</text>
-                            : <text x={p.cx-10} y={p.cy+4} fontSize="9" fontWeight="bold" fill="#1e293b" textAnchor="end">{line.name||`Hat ${i+1}`}</text>
-                          }
-
-                          {/* I₃k ve I₁k */}
-                          {ik3 > 0 && (
-                            <text x={p.cx} y={p.cy+18} textAnchor="middle" fontSize="8" fontWeight="bold" fill="#7c3aed">
-                              {ik3.toFixed(2)} kA
-                            </text>
+                          {/* Kablo kutusu — beyaz zemin + mavi kutu */}
+                          {!isEk && (
+                            <>
+                              <rect x={p.cx-36} y={midY-14} width="72" height="26" rx="4" fill="white"/>
+                              <rect x={p.cx-36} y={midY-14} width="72" height="26" rx="4" fill="#e0f2fe" stroke="#0284c7" strokeWidth="1.2"/>
+                              <text x={p.cx} y={midY-3}  textAnchor="middle" fontSize="6.5" fontWeight="bold" fill="#0369a1">{cable?.name||'?'}</text>
+                              <text x={p.cx} y={midY+9}  textAnchor="middle" fontSize="6.5" fill="#0369a1">{line.length}km{n>1?` ×${n}`:''}</text>
+                            </>
                           )}
-                          {ik1 > 0 && (
-                            <text x={p.cx} y={p.cy+29} textAnchor="middle" fontSize="7" fill="#ea580c">
-                              I₁k={ik1.toFixed(2)}kA
-                            </text>
+
+                          {/* EK node: küçük yuvarlak */}
+                          {isEk && (
+                            <>
+                              <circle cx={p.cx} cy={p.cy} r="4" fill="white" stroke="#f59e0b" strokeWidth="2"/>
+                              <text x={nameRight?p.cx+8:p.cx-8} y={p.cy+4}
+                                fontSize="8" fontWeight="bold" fill="#b45309"
+                                textAnchor={nameRight?'start':'end'}>EK</text>
+                            </>
+                          )}
+
+                          {/* Düğüm dairesi (EK değilse) */}
+                          {!isEk && (
+                            <>
+                              <circle cx={p.cx} cy={p.cy} r="6" fill="white"/>
+                              <circle cx={p.cx} cy={p.cy} r="6" fill="#334155"/>
+                              {/* Düğüm ismi */}
+                              {nameRight
+                                ? <text x={p.cx+10} y={p.cy+4} fontSize="9" fontWeight="bold" fill="#1e293b">{line.name||''}</text>
+                                : <text x={p.cx-10} y={p.cy+4} fontSize="9" fontWeight="bold" fill="#1e293b" textAnchor="end">{line.name||''}</text>
+                              }
+                              {/* kA değerleri — ismin hemen altında, çizginin YANINDA */}
+                              {ik3 > 0 && (
+                                <text x={kx} y={p.cy+16} fontSize="7.5" fontWeight="bold"
+                                  fill="#7c3aed" textAnchor={kAnchor}>
+                                  I₃k={ik3.toFixed(2)}kA
+                                </text>
+                              )}
+                              {ik1 > 0 && (
+                                <text x={kx} y={p.cy+27} fontSize="7" fill="#ea580c" textAnchor={kAnchor}>
+                                  I₁k={ik1.toFixed(2)}kA
+                                </text>
+                              )}
+                            </>
                           )}
                         </g>
                       );
