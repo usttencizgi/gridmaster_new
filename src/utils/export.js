@@ -230,12 +230,12 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
   }).join('');
 
   // ─── ŞEMA SVG — A4'e sığacak kompakt versiyon ────────────────────
-  const PER_COL = 5;
+  const PER_COL = 4;
   const numCols = Math.max(1, Math.ceil(lines.length / PER_COL));
   const perCol  = Math.ceil(lines.length / numCols);
-  const SCH_W   = 700, COL_W = Math.min(140, (SCH_W-40)/numCols);
-  const ROW_H   = 80,  TOP   = 155;
-  const SCH_H   = TOP + perCol * ROW_H + 40;
+  const SCH_W   = 700, COL_W = Math.min(130, (SCH_W-40)/numCols);
+  const ROW_H   = 68,  TOP   = 140;
+  const SCH_H   = Math.min(430, TOP + perCol * ROW_H + 30);
   const BARA_X  = 40 + COL_W / 2;
 
   const schPos = lines.map((_, i) => {
@@ -300,7 +300,7 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
   }).join('')}
   </svg>`;
   const html = `
-    <!-- KAPAK BAŞLIĞI -->
+    <div style="page-break-inside:avoid;break-inside:avoid"><!-- KAPAK BAŞLIĞI -->
     <table style="margin-bottom:0;font-size:11px">
       <tr>
         <td style="width:60%;vertical-align:top;padding:0">
@@ -329,7 +329,8 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
     <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:4px">
       TEK HAT ŞEMASI
     </div>
-    <div style="margin-bottom:12px">${schemaSvg}</div>
+    <div style="margin-bottom:10px;page-break-inside:avoid;break-inside:avoid;page-break-after:avoid;break-after:avoid">${schemaSvg}</div>
+    </div><!-- end kapak wrapper -->
 
     <div style="margin:16px 0 6px;font-size:13px;font-weight:900;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:4px">
       1.  BARA GİRİŞ VERİLERİ
@@ -534,21 +535,42 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
       <span>${dateStr} ${timeStr}</span>
     </div>
     <script>
+    window._wordReady = false;
+    window.onload = function() { window._wordReady = true; };
     function dlWord(){
-      var tb=document.querySelector(".toolbar");
-      if(tb)tb.style.display="none";
-      var h="<!DOCTYPE html><html><head><meta charset=UTF-8><style>body{font-family:Arial,font-size:10pt}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:white;padding:4pt 6pt;font-size:8pt;text-align:left}td{padding:3pt 6pt;border:1px solid #ccc}tr:nth-child(even)td{background:#f9f9f9}.mono{font-family:Courier}</style></head><body>"+
-        document.body.innerHTML
-          .replace(/<div[^>]*toolbar[^>]*>[\s\S]*?<\/div>/i,"")
-          .replace(/<svg[\s\S]*?<\/svg>/gi,"<p>[Tek Hat Semasi - PDF versiyonunda mevcuttur]</p>") +
-        "</body></html>";
-      if(tb)tb.style.display="";
-      var b=new Blob([h],{type:"application/msword"});
-      var u=URL.createObjectURL(b);
-      var a=document.createElement("a");
-      a.href=u; a.download="OG_Kisa_Devre_Raporu.doc";
-      document.body.appendChild(a); a.click();
-      document.body.removeChild(a); URL.revokeObjectURL(u);
+      var nodes = document.querySelectorAll("table, h1, h2, h3, p, div[style]");
+      var wordCSS = "<style>body{font-family:Arial,sans-serif;font-size:10pt;color:#1e293b}"+
+        "table{border-collapse:collapse;width:100%;margin-bottom:8pt}"+
+        "th{background:#1e3a5f;color:white;padding:3pt 5pt;font-size:8pt;text-align:left;font-weight:bold}"+
+        "td{padding:2pt 5pt;border-bottom:1px solid #ddd;font-size:9pt}"+
+        "tr:nth-child(even) td{background:#f8fafc}"+
+        ".mono{font-family:Courier New,monospace}"+
+        "h1,h2,h3{color:#1e3a5f}"+
+        "</style>";
+      var bodyClone = document.body.cloneNode(true);
+      // Remove toolbar
+      var tb = bodyClone.querySelector(".toolbar");
+      if(tb) tb.remove();
+      // Remove SVG elements (schema)  
+      var svgs = bodyClone.querySelectorAll("svg");
+      svgs.forEach(function(s){
+        var p = document.createElement("p");
+        p.style.fontStyle = "italic";
+        p.style.color = "#64748b";
+        p.textContent = "[Tek Hat Semasi - PDF versiyonunda mevcuttur]";
+        s.parentNode.replaceChild(p, s);
+      });
+      var wordHTML = "<!DOCTYPE html><html><head><meta charset='UTF-8'>" + 
+        wordCSS + "</head><body>" + bodyClone.innerHTML + "</body></html>";
+      var blob = new Blob([wordHTML], {type:"application/vnd.ms-word"});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = "OG_Kisa_Devre_Raporu.doc";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
     }
     <\/script>
     </body></html>
