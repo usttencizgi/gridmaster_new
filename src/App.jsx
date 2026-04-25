@@ -12,6 +12,7 @@ import Yildirim from './modules/Yildirim.jsx';
 import PvCompatibility from './modules/PvCompatibility.jsx';
 import GesKablo from './modules/GesKablo.jsx';
 import GesTopraklama from './modules/GesTopraklama.jsx';
+import CatiTasarim   from './modules/CatiTasarim.jsx';
 import Kompanzasyon from './modules/Kompanzasyon.jsx';
 import EnhEditor from './modules/EnhEditor.jsx';
 import KoskKonfigurator from './modules/KoskKonfigurator.jsx';
@@ -29,6 +30,7 @@ const TITLES = {
   'pv-compatibility': 'Panel — Evirici Uyumluluk',
   'ges-kablo':        'GES — Kablo & Güç Hesapları',
   'ges-topraklama':   'GES — Topraklama Hesabı',
+  'cati-tasarim':     'Çatı GES Tasarım Aracı',
   kompanzasyon:       'Reaktif Güç Kompanzasyonu',
   'enh-editor':       'ENH — Tek Hat Şeması Editörü',
   'kosk-konfig':       'Köşk Konfigüratörü',
@@ -64,6 +66,7 @@ export default function App() {
       case 'pv-compatibility': return <PvCompatibility/>;
       case 'ges-kablo':        return <GesKablo/>;
       case 'ges-topraklama':   return <GesTopraklama initialIk1={gesIk1}/>;
+      case 'cati-tasarim':     return <CatiTasarim onSendToGesKablo={data => { setActiveModule('ges-kablo'); }}/>;
       case 'kompanzasyon':     return <Kompanzasyon/>;
       case 'enh-editor':       return <EnhEditor/>;
       case 'kosk-konfig':    return <KoskKonfigurator/>;
