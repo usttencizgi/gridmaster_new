@@ -525,17 +525,7 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
     </style></head><body>
     <div class="toolbar">
       <button class="btn btn-pdf" onclick="window.print()">🖨 PDF Yazdır</button>
-      <button class="btn btn-word" onclick="(function(){
-        var h='<!DOCTYPE html><html><head><meta charset=UTF-8><style>body{font-family:Arial,sans-serif;font-size:10pt}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:white;padding:4pt 6pt;font-size:8pt;text-align:left}td{padding:3pt 6pt;border:1px solid #ccc}tr:nth-child(even) td{background:#f9f9f9}.mono{font-family:Courier}</style></head><body>'+
-          document.body.innerHTML.replace(/<div class=\"toolbar\">[\\s\\S]*?<\\/div>/,'')
-          .replace(/<svg[\\s\\S]*?<\\/svg>/g,'<p>[Tek Hat Şeması — PDF versiyonunda mevcuttur]</p>')+'</body></html>';
-        var b=new Blob([h],{type:'application/msword'});
-        var u=URL.createObjectURL(b);
-        var a=document.createElement('a');a.href=u;
-        a.download='OG_Kisa_Devre_${wordSafeName}.doc';
-        document.body.appendChild(a);a.click();
-        document.body.removeChild(a);URL.revokeObjectURL(u);
-      })()">📄 Word İndir</button>
+      <button class="btn btn-word" onclick="dlWord()">📄 Word İndir</button>
     </div>
     ${html}
     <div class="footer">
@@ -543,6 +533,24 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
       <span>IEC 60909 | Sb=${result.Sb||100}MVA · Ub=${result.Ub||34.5}kV · c=${result.c||1.10} · κ=${kappa}</span>
       <span>${dateStr} ${timeStr}</span>
     </div>
+    <script>
+    function dlWord(){
+      var tb=document.querySelector(".toolbar");
+      if(tb)tb.style.display="none";
+      var h="<!DOCTYPE html><html><head><meta charset=UTF-8><style>body{font-family:Arial,font-size:10pt}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:white;padding:4pt 6pt;font-size:8pt;text-align:left}td{padding:3pt 6pt;border:1px solid #ccc}tr:nth-child(even)td{background:#f9f9f9}.mono{font-family:Courier}</style></head><body>"+
+        document.body.innerHTML
+          .replace(/<div[^>]*toolbar[^>]*>[\s\S]*?<\/div>/i,"")
+          .replace(/<svg[\s\S]*?<\/svg>/gi,"<p>[Tek Hat Semasi - PDF versiyonunda mevcuttur]</p>") +
+        "</body></html>";
+      if(tb)tb.style.display="";
+      var b=new Blob([h],{type:"application/msword"});
+      var u=URL.createObjectURL(b);
+      var a=document.createElement("a");
+      a.href=u; a.download="OG_Kisa_Devre_Raporu.doc";
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(u);
+    }
+    <\/script>
     </body></html>
   `);
   printWindow.document.close();
