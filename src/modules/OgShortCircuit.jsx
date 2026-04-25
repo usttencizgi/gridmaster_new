@@ -421,68 +421,134 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
                 <button onClick={() => setShowDiagram(false)} className="hover:bg-slate-700 p-1 rounded-lg"><X size={20} /></button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-6 bg-slate-50">
-              <svg id="og-schema-svg" width="500" height={svgHeight} viewBox={`0 0 500 ${svgHeight}`} className="w-full bg-white rounded-xl border shadow-sm p-4">
-                <line x1="250" y1="55" x2="250" y2={svgHeight-115} stroke="#94a3b8" strokeWidth="2" strokeDasharray="5,4"/>
-                <g transform="translate(250,60)">
-                  <circle cx="0" cy="0" r="20" fill="#f5f3ff" stroke="#7c3aed" strokeWidth="2.5"/>
-                  <text x="0" y="-3" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#7c3aed">154kV</text>
-                  <text x="28" y="-5" fontSize="11" fontWeight="bold" fill="#1e293b">{sourceName}</text>
-                  <text x="28" y="9" fontSize="9" fill="#64748b">Güç Sistemi</text>
-                </g>
-                <g transform="translate(250,145)">
-                  <rect x="-26" y="-20" width="52" height="40" rx="6" fill="#ede9fe" stroke="#7c3aed" strokeWidth="2"/>
-                  <text x="0" y="-4" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#5b21b6">34.5kV</text>
-                  <text x="0" y="9" textAnchor="middle" fontSize="8" fill="#5b21b6">TRAFO</text>
-                </g>
-                <g transform="translate(250,210)">
-                  <line x1="-55" y1="0" x2="55" y2="0" stroke="#1e293b" strokeWidth="6" strokeLinecap="round"/>
-                  <text x="65" y="4" fontSize="10" fontWeight="bold" fill="#1e293b">34.5 kV Barası</text>
-                  {result.busbarCurrent > 0 && (
-                    <g transform="translate(0,12)">
-                      <rect x="-60" y="0" width="120" height="22" rx="4" fill="#ede9fe" stroke="#7c3aed" strokeWidth="1.5"/>
-                      <text x="0" y="15" textAnchor="middle" fontSize="10" fontWeight="bold" fill="#6d28d9">I₃k = {result.busbarCurrent.toFixed(2)} kA</text>
+            <div className="flex-1 overflow-auto p-4 bg-slate-50">
+              {(() => {
+                // Zigzag/yılan düzeni: her sütunda max 5 hat
+                const PER_COL = 5;
+                const numCols = Math.ceil(lines.length / PER_COL);
+                const perCol  = Math.ceil(lines.length / numCols);
+                const SVG_W   = 520;
+                const COL_W   = Math.min(160, (SVG_W - 40) / numCols);
+                const ROW_H   = 110;
+                const TOP     = 220;
+                const SVG_H   = TOP + perCol * ROW_H + 60;
+                const BARA_X  = 40 + (numCols * COL_W) / 2;
+
+                // Her hat için koordinat
+                const pos = lines.map((_, i) => {
+                  const col = Math.floor(i / perCol);
+                  const rowInCol = i % perCol;
+                  // Çift sütunlar yukarı gider (yılan)
+                  const row = col % 2 === 0 ? rowInCol : (perCol - 1 - rowInCol);
+                  const cx = 40 + col * COL_W + COL_W / 2;
+                  const cy = TOP + row * ROW_H + 40;
+                  return { col, row, cx, cy };
+                });
+
+                // Kümülatif Ik3 hesabı
+                const Zb = 11.9025, Ib = 1673.5, c = 1.10;
+                const ik3vals = [];
+                let cumZ = result.zBaraPu || 0;
+                (result.lineDetails || []).forEach(d => {
+                  cumZ += (d.Z_seg_ohm || 0) / Zb;
+                  ik3vals.push(cumZ > 0 ? (c * Ib / cumZ / 1000) : 0);
+                });
+
+                return (
+                  <svg id="og-schema-svg" width={SVG_W} height={SVG_H}
+                    viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+                    className="w-full bg-white rounded-xl border shadow-sm">
+
+                    {/* Şebeke */}
+                    <g transform={`translate(${BARA_X},30)`}>
+                      <circle cx="0" cy="0" r="16" fill="#f5f3ff" stroke="#7c3aed" strokeWidth="2"/>
+                      <text x="0" y="-3" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#7c3aed">154kV</text>
+                      <text x="20" y="-4" fontSize="9" fontWeight="bold" fill="#1e293b">{sourceName}</text>
+                      <text x="20" y="7"  fontSize="7" fill="#64748b">Güç Sistemi</text>
                     </g>
-                  )}
-                </g>
-                {lines.map((line, i) => {
-                  const yBase=255, yTop=yBase+i*130, yBot=yTop+130;
-                  const cable=cables.find(c=>c.id===line.cableTypeId), n=line.circuitCount||1;
-                  return (
-                    <g key={line.id}>
-                      {n>1 ? (<><line x1="247" y1={yTop} x2="247" y2={yBot} stroke="#334155" strokeWidth="2.5"/><line x1="253" y1={yTop} x2="253" y2={yBot} stroke="#334155" strokeWidth="2.5"/></>) : (<line x1="250" y1={yTop} x2="250" y2={yBot} stroke="#334155" strokeWidth="3"/>)}
-                      <g transform={`translate(250,${yTop+55})`}>
-                        <rect x="-42" y="-16" width="84" height="32" rx="5" fill="#e0f2fe" stroke="#0284c7" strokeWidth="1.5"/>
-                        <text x="0" y="-3" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#0369a1">{cable?.name||'?'}</text>
-                        <text x="0" y="10" textAnchor="middle" fontSize="9" fill="#0369a1">{line.length} km</text>
-                        {n>1 && <text x="0" y="22" textAnchor="middle" fontSize="8" fill="#7c3aed" fontWeight="bold">{n}× paralel</text>}
-                      </g>
-                      <g transform={`translate(250,${yBot})`}>
-                        <circle cx="0" cy="0" r="7" fill="#475569"/>
-                        <line x1="7" y1="0" x2="55" y2="0" stroke="#475569" strokeWidth="2.5"/>
-                        <text x="62" y="-4" fontSize="10" fontWeight="bold" fill="#1e293b">
-                          {line.name ? line.name : `Hat ${i+1} Sonu`}
-                        </text>
-                        <text x="62" y="9" fontSize="8" fill="#94a3b8">Hat {i+1}</text>
-                        {i===lines.length-1 && result.lineEndCurrent>0 && (
-                          <g transform="translate(0,14)">
-                            <rect x="-80" y="0" width="160" height="24" rx="5" fill="#fdf4ff" stroke="#a21caf" strokeWidth="1.5"/>
-                            <text x="0" y="16" textAnchor="middle" fontSize="11" fontWeight="bold" fill="#86198f">I₃k = {result.lineEndCurrent.toFixed(2)} kA</text>
-                          </g>
-                        )}
-                      </g>
+
+                    {/* Trafo */}
+                    <line x1={BARA_X} y1="46" x2={BARA_X} y2="90" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4,3"/>
+                    <g transform={`translate(${BARA_X},103)`}>
+                      <rect x="-22" y="-16" width="44" height="32" rx="4" fill="#ede9fe" stroke="#7c3aed" strokeWidth="1.5"/>
+                      <text x="0" y="-3" textAnchor="middle" fontSize="7" fontWeight="bold" fill="#5b21b6">34.5kV</text>
+                      <text x="0" y="9"  textAnchor="middle" fontSize="7" fill="#5b21b6">TRAFO</text>
                     </g>
-                  );
-                })}
-                <g transform={`translate(10,${svgHeight-110})`}>
-                  <rect x="0" y="0" width="480" height="95" rx="8" fill="#f8fafc" stroke="#cbd5e1" strokeWidth="1.5"/>
-                  <text x="12" y="20" fontSize="11" fontWeight="bold" fill="#334155">HESAP DETAYI:</text>
-                  <text x="12" y="38" fontSize="10" fontFamily="monospace" fill="#475569">Zb={( 34.5*34.5/100).toFixed(4)}Ω  |  Ib={(100*1000/(1.732*34.5)).toFixed(2)}A</text>
-                  <text x="12" y="54" fontSize="10" fontFamily="monospace" fill="#475569">Z_bara(pu)={result.zBaraPu?.toFixed(5)}  →  I₃k_bara={result.busbarCurrent.toFixed(3)}kA</text>
-                  <text x="12" y="70" fontSize="10" fontFamily="monospace" fill="#475569">Z_top(pu)={result.zTotalPu?.toFixed(5)}  →  I₃k_hat={result.lineEndCurrent.toFixed(3)}kA</text>
-                  <text x="12" y="86" fontSize="9" fontFamily="monospace" fill="#94a3b8">Çift devre: Z_hat=Z_kablo/n  |  IEC 60909</text>
-                </g>
-              </svg>
+
+                    {/* 34.5 kV Barası */}
+                    <line x1={BARA_X} y1="119" x2={BARA_X} y2="150" stroke="#94a3b8" strokeWidth="2" strokeDasharray="4,3"/>
+                    <line x1="30" y1="155" x2={SVG_W-30} y2="155" stroke="#1e293b" strokeWidth="5" strokeLinecap="round"/>
+                    <text x={BARA_X} y="145" textAnchor="middle" fontSize="9" fontWeight="bold" fill="#1e293b">34.5 kV Barası</text>
+                    {result.busbarCurrent > 0 && (
+                      <text x={BARA_X} y="172" textAnchor="middle" fontSize="8" fontWeight="bold" fill="#6d28d9">
+                        {`I₃k=${result.busbarCurrent.toFixed(2)}kA${result.Ik1_bara>0?'  I₁k='+result.Ik1_bara.toFixed(2)+'kA':''}`}
+                      </text>
+                    )}
+
+                    {/* Hatlar */}
+                    {lines.map((line, i) => {
+                      const p = pos[i];
+                      const cable = cables.find(c => c.id === line.cableTypeId);
+                      const n = line.circuitCount || 1;
+                      const ik = ik3vals[i] || 0;
+
+                      // Önceki nokta
+                      let prevX, prevY;
+                      if (i === 0) { prevX = 40 + pos[0].col * COL_W + COL_W/2; prevY = 155; }
+                      else         { prevX = pos[i-1].cx; prevY = pos[i-1].cy; }
+
+                      const sameCol  = i > 0 && pos[i-1].col === p.col;
+                      const colChg   = i > 0 && pos[i-1].col !== p.col;
+                      const cxFirst  = 40 + COL_W/2;
+
+                      return (
+                        <g key={line.id}>
+                          {/* Bara'dan ilk hat */}
+                          {i === 0 && <line x1={cxFirst} y1="155" x2={cxFirst} y2={p.cy-30} stroke="#334155" strokeWidth="2"/>}
+                          {/* Aynı sütun: düz aşağı */}
+                          {sameCol && (
+                            n > 1
+                              ? <><line x1={prevX-2} y1={prevY} x2={prevX-2} y2={p.cy-30} stroke="#334155" strokeWidth="1.5"/><line x1={prevX+2} y1={prevY} x2={prevX+2} y2={p.cy-30} stroke="#334155" strokeWidth="1.5"/></>
+                              : <line x1={prevX} y1={prevY} x2={p.cx} y2={p.cy-30} stroke="#334155" strokeWidth="2"/>
+                          )}
+                          {/* Sütun geçişi: yatay köprü */}
+                          {colChg && (
+                            <path d={`M ${prevX} ${prevY} L ${prevX} ${p.cy} L ${p.cx} ${p.cy}`}
+                              fill="none" stroke="#334155" strokeWidth="2" strokeLinejoin="round"/>
+                          )}
+
+                          {/* Kablo kutusu */}
+                          <rect x={p.cx-34} y={p.cy-58} width="68" height="26" rx="4" fill="#e0f2fe" stroke="#0284c7" strokeWidth="1"/>
+                          <text x={p.cx} y={p.cy-46} textAnchor="middle" fontSize="6.5" fontWeight="bold" fill="#0369a1">{cable?.name||'?'}</text>
+                          <text x={p.cx} y={p.cy-36} textAnchor="middle" fontSize="6.5" fill="#0369a1">{line.length}km{n>1?` ×${n}`:''}</text>
+
+                          {/* Düğüm */}
+                          <circle cx={p.cx} cy={p.cy} r="5" fill="#475569"/>
+                          {/* İsim — sütun yönüne göre sağa/sola */}
+                          {p.col % 2 === 0
+                            ? <text x={p.cx+8} y={p.cy+4} fontSize="8.5" fontWeight="bold" fill="#1e293b">{line.name||`Hat ${i+1}`}</text>
+                            : <text x={p.cx-8} y={p.cy+4} fontSize="8.5" fontWeight="bold" fill="#1e293b" textAnchor="end">{line.name||`Hat ${i+1}`}</text>
+                          }
+                          {ik > 0 && (
+                            <text x={p.cx} y={p.cy+16} textAnchor="middle" fontSize="7.5" fill="#7c3aed" fontWeight="bold">
+                              {ik.toFixed(2)} kA
+                            </text>
+                          )}
+                        </g>
+                      );
+                    })}
+
+                    {/* Alt bilgi şeridi */}
+                    <rect x="4" y={SVG_H-38} width={SVG_W-8} height="34" rx="5" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="1"/>
+                    <text x="12" y={SVG_H-22} fontSize="7.5" fontFamily="monospace" fill="#475569">
+                      {`IEC 60909 | c=1.10 | Sb=100MVA | Ub=34.5kV | I₃k bara=${result.busbarCurrent.toFixed(3)}kA | I₃k hat=${result.lineEndCurrent.toFixed(3)}kA`}
+                    </text>
+                    <text x="12" y={SVG_H-10} fontSize="7.5" fontFamily="monospace" fill="#64748b">
+                      {result.Ik1_bara > 0 ? `I₁k bara=${result.Ik1_bara.toFixed(3)}kA | I₁k hat sonu=${result.Ik1_end.toFixed(3)}kA | Trafo: ${result.trafoTip||'Dyn'}` : `Z_bara=${result.zBaraPu?.toFixed(5)}pu | Z_top=${result.zTotalPu?.toFixed(5)}pu`}
+                    </text>
+                  </svg>
+                );
+              })()}
             </div>
           </div>
         </div>

@@ -163,7 +163,7 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
   // ─── KISA DEVRE ÖZET ───
   const Ib_kA = Ib / 1000;
   const summaryRows = [
-    { id:'34.5 kV Barası', kv:'34.500',
+    { id: '34.5 kV Barası', kv:'34.500',
       ik3: result.busbarCurrent, ip3: result.ip_bara,
       ik1: result.Ik1_bara || 0, ip1: result.ip1_bara || 0,
       Z_ohm: result.Z1_bara_ohm },
@@ -173,8 +173,9 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
       const Z0tot_pu = (result.Z0_kaynak_pu||0) + (result.lineDetails.slice(0,i+1).reduce((a,x)=>a+(x.Z_seg_ohm*(x.z0Ratio||3.5))/Zb,0));
       const ik1      = (Ztot_pu > 0 && Z0tot_pu > 0)
         ? (result.c * 3 * Ib / ((2*Ztot_pu + Z0tot_pu) * 1000)) : 0;
-      return { id: d.name ? `${d.name} (Hat ${d.idx})` : `Hat ${d.idx} Sonu`,
-               kv:'34.500', ik3, ip3: kappa*Math.sqrt(2)*ik3,
+      // Düğüm ismi: hat ismi varsa kullan, yoksa "Hat N Sonu"
+      const nodeId = d.name ? d.name : `Hat ${d.idx} Sonu`;
+      return { id: nodeId, kv:'34.500', ik3, ip3: kappa*Math.sqrt(2)*ik3,
                ik1, ip1: kappa*Math.sqrt(2)*ik1, Z_ohm: Ztot_pu*Zb };
     }),
   ];
@@ -225,6 +226,67 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
     </tr>`;
   }).join('');
 
+  // ─── ŞEMA SVG oluştur (zigzag) ───────────────────────────────
+  const PER_COL = 5;
+  const numCols = Math.ceil(lines.length / PER_COL);
+  const perCol  = Math.ceil(lines.length / numCols);
+  const SCH_W   = 680, COL_W = Math.min(155, (SCH_W-40)/numCols);
+  const ROW_H   = 95, TOP = 190;
+  const SCH_H   = TOP + perCol * ROW_H + 50;
+  const BARA_X  = 40 + (numCols * COL_W)/2;
+
+  const schPos = lines.map((_, i) => {
+    const col = Math.floor(i / perCol);
+    const rowInCol = i % perCol;
+    const row = col % 2 === 0 ? rowInCol : (perCol - 1 - rowInCol);
+    const cx = 40 + col * COL_W + COL_W/2;
+    const cy = TOP + row * ROW_H + 35;
+    return { col, row, cx, cy };
+  });
+
+  const Zb2 = 11.9025, Ib2 = 1673.5;
+  let cumZ2 = result.zBaraPu || 0;
+  const ik3vals = (result.lineDetails||[]).map(d => {
+    cumZ2 += (d.Z_seg_ohm||0)/Zb2;
+    return cumZ2 > 0 ? (1.10*Ib2/cumZ2/1000) : 0;
+  });
+
+  const schemaSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SCH_W}" height="${SCH_H}" viewBox="0 0 ${SCH_W} ${SCH_H}" style="background:white;border:1px solid #e2e8f0;border-radius:6px">
+  <circle cx="${BARA_X}" cy="28" r="14" fill="#f5f3ff" stroke="#7c3aed" strokeWidth="2"/>
+  <text x="${BARA_X}" y="25" text-anchor="middle" font-size="7" font-weight="bold" fill="#7c3aed">154kV</text>
+  <text x="${BARA_X+18}" y="24" font-size="9" font-weight="bold" fill="#1e293b">${sourceName}</text>
+  <line x1="${BARA_X}" y1="42" x2="${BARA_X}" y2="80" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="3,2"/>
+  <rect x="${BARA_X-20}" y="80" width="40" height="28" rx="4" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="${BARA_X}" y="91" text-anchor="middle" font-size="7" font-weight="bold" fill="#5b21b6">34.5kV</text>
+  <text x="${BARA_X}" y="102" text-anchor="middle" font-size="7" fill="#5b21b6">TRAFO</text>
+  <line x1="${BARA_X}" y1="108" x2="${BARA_X}" y2="135" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="3,2"/>
+  <line x1="25" y1="138" x2="${SCH_W-25}" y2="138" stroke="#1e293b" stroke-width="5" stroke-linecap="round"/>
+  <text x="${BARA_X}" y="128" text-anchor="middle" font-size="8" font-weight="bold" fill="#1e293b">34.5 kV Barası</text>
+  <text x="${BARA_X}" y="153" text-anchor="middle" font-size="8" font-weight="bold" fill="#6d28d9">I₃k=${result.busbarCurrent.toFixed(2)}kA${result.Ik1_bara>0?' | I₁k='+result.Ik1_bara.toFixed(2)+'kA':''}</text>
+  ${lines.map((line, i) => {
+    const p = schPos[i], cab = cables.find(c=>c.id===line.cableTypeId);
+    const n = line.circuitCount||1, ik = ik3vals[i]||0;
+    let prevX, prevY;
+    if (i===0) { prevX=40+schPos[0].col*COL_W+COL_W/2; prevY=138; }
+    else { prevX=schPos[i-1].cx; prevY=schPos[i-1].cy; }
+    const sameCol = i>0 && schPos[i-1].col===p.col;
+    const colChg  = i>0 && schPos[i-1].col!==p.col;
+    const lbl = line.name || `Hat ${i+1}`;
+    return `
+    ${i===0?`<line x1="${40+COL_W/2}" y1="138" x2="${40+COL_W/2}" y2="${p.cy-24}" stroke="#334155" stroke-width="1.5"/>`:''}
+    ${sameCol?`<line x1="${prevX}" y1="${prevY}" x2="${p.cx}" y2="${p.cy-24}" stroke="#334155" stroke-width="1.5" ${n>1?'stroke-dasharray="4,2"':''}/>`:``}
+    ${colChg?`<path d="M ${prevX} ${prevY} L ${prevX} ${p.cy} L ${p.cx} ${p.cy}" fill="none" stroke="#334155" stroke-width="1.5" stroke-linejoin="round"/>`:``}
+    <rect x="${p.cx-30}" y="${p.cy-48}" width="60" height="22" rx="3" fill="#e0f2fe" stroke="#0284c7" stroke-width="1"/>
+    <text x="${p.cx}" y="${p.cy-38}" text-anchor="middle" font-size="6" font-weight="bold" fill="#0369a1">${cab?.name||'?'}</text>
+    <text x="${p.cx}" y="${p.cy-29}" text-anchor="middle" font-size="6" fill="#0369a1">${line.length}km${n>1?' ×'+n:''}</text>
+    <circle cx="${p.cx}" cy="${p.cy}" r="4.5" fill="#475569"/>
+    ${p.col%2===0
+      ? `<text x="${p.cx+7}" y="${p.cy+4}" font-size="7.5" font-weight="bold" fill="#1e293b">${lbl}</text>`
+      : `<text x="${p.cx-7}" y="${p.cy+4}" text-anchor="end" font-size="7.5" font-weight="bold" fill="#1e293b">${lbl}</text>`}
+    ${ik>0?`<text x="${p.cx}" y="${p.cy+14}" text-anchor="middle" font-size="7" fill="#7c3aed" font-weight="bold">${ik.toFixed(2)}kA</text>`:''}`;
+  }).join('')}
+  </svg>`;
+
   const html = `
     <!-- KAPAK BAŞLIĞI -->
     <table style="margin-bottom:0;font-size:11px">
@@ -236,7 +298,7 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
           </div>
           <div style="background:#f1f5f9;padding:8px 14px;border:1px solid #e2e8f0;border-top:none">
             <div style="font-size:14px;font-weight:900;color:#1e3a5f">OG KISA DEVRE ANALİZİ</div>
-            <div style="font-size:10px;color:#475569;margin-top:2px">IEC 60909 Standardı — Üç-Faz Simetrik Arıza</div>
+            <div style="font-size:10px;color:#475569;margin-top:2px">IEC 60909 Standardı — Üç-Faz &amp; Faz-Toprak Arıza</div>
           </div>
         </td>
         <td style="width:40%;vertical-align:top;padding:0;padding-left:10px">
@@ -251,6 +313,11 @@ export function exportOgShortCircuitPDF(sourceName, sourceParams, lines, result,
         </td>
       </tr>
     </table>
+
+    <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:4px">
+      TEK HAT ŞEMASI
+    </div>
+    <div style="margin-bottom:12px">${schemaSvg}</div>
 
     <div style="margin:16px 0 6px;font-size:13px;font-weight:900;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:4px">
       1.  BARA GİRİŞ VERİLERİ
