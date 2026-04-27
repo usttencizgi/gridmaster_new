@@ -722,30 +722,141 @@ export async function exportPvCompatibility(panel, inverter, results) {
 
 // ─── PDF HTML TEMPLATE BUILDER'LARI ──────────────────────────────────────────
 
-export function buildOgVoltageDropPDF(nodes, results, cables, metrics) {
-  const rows = results.map((r, i) => {
-    const n = nodes[i];
-    const cable = cables.find(c => c.id === n.cableTypeId);
-    const ok = r.isSafeDrop && r.isSafeCurrent;
-    return `<tr>
-      <td>${n.name}</td><td>${cable?.name || ''}</td><td>${n.length}</td><td>${n.loadKVA}</td>
-      <td class="mono">${r.segmentCurrent.toFixed(2)}</td>
-      <td class="mono">${r.voltageDropPercent.toFixed(3)}</td>
-      <td class="mono"><b>${r.totalDropPercent.toFixed(3)}</b></td>
-      <td class="mono">${r.powerLoss.toFixed(2)}</td>
-      <td><span class="${ok ? 'badge-ok' : 'badge-fail'}">${ok ? 'UYGUN' : 'UYGUN DEĞİL'}</span></td>
-    </tr>`;
+export function buildOgVoltageDropPDF(nodes, results, cables, metrics, sourceName) {
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('tr-TR', { day:'2-digit', month:'2-digit', year:'numeric' });
+  const timeStr = now.toLocaleTimeString('tr-TR', { hour:'2-digit', minute:'2-digit' });
+  const fmt = (n, d=3) => (typeof n==='number'&&isFinite(n)) ? n.toFixed(d) : '—';
+  const TM = sourceName || 'Trafo Merkezi';
+  const totalLoad = nodes.reduce((s,n)=>s+Number(n.loadKVA||0),0);
+
+  // Tek Hat Şeması
+  const PER_COL=4, numCols=Math.max(1,Math.ceil(nodes.length/PER_COL)), perCol=Math.ceil(nodes.length/numCols);
+  const SCH_W=700, COL_W=Math.min(140,(SCH_W-40)/numCols), ROW_H=75, TOP=140;
+  const SCH_H=Math.min(430,TOP+perCol*ROW_H+40), BARA_X=40+COL_W/2;
+  const schPos=nodes.map((_,i)=>{
+    const col=Math.floor(i/perCol), rowInCol=i%perCol;
+    const row=col%2===0?rowInCol:(perCol-1-rowInCol);
+    return{col,row,cx:40+col*COL_W+COL_W/2,cy:TOP+row*ROW_H+30};
+  });
+
+  const schemaSvg=`<svg xmlns="http://www.w3.org/2000/svg" width="${SCH_W}" height="${SCH_H}" viewBox="0 0 ${SCH_W} ${SCH_H}" style="background:white;border:1px solid #e2e8f0;border-radius:4px;max-width:100%">
+  <circle cx="${BARA_X}" cy="20" r="12" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="${BARA_X}" y="17" text-anchor="middle" font-size="6" font-weight="bold" fill="#2563eb">154kV</text>
+  <text x="${BARA_X+16}" y="16" font-size="8" font-weight="bold" fill="#1e293b">${TM}</text>
+  <line x1="${BARA_X}" y1="32" x2="${BARA_X}" y2="58" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,2"/>
+  <rect x="${BARA_X-18}" y="58" width="36" height="24" rx="3" fill="#eff6ff" stroke="#2563eb" stroke-width="1.2"/>
+  <text x="${BARA_X}" y="68" text-anchor="middle" font-size="6" font-weight="bold" fill="#1e40af">34.5kV</text>
+  <text x="${BARA_X}" y="77" text-anchor="middle" font-size="6" fill="#1e40af">TRAFO</text>
+  <line x1="${BARA_X}" y1="82" x2="${BARA_X}" y2="108" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,2"/>
+  <line x1="20" y1="111" x2="${SCH_W-20}" y2="111" stroke="#1e293b" stroke-width="4.5" stroke-linecap="round"/>
+  <text x="${BARA_X}" y="103" text-anchor="middle" font-size="7" font-weight="bold" fill="#1e293b">34.5 kV Barası</text>
+  <text x="${BARA_X}" y="126" text-anchor="middle" font-size="7" font-weight="bold" fill="#2563eb">ΔU_max=${fmt(metrics.maxDrop,3)}%  |  P_kayıp=${fmt(metrics.totalPowerLoss,2)} kW</text>
+  ${nodes.map((node,i)=>{
+    const p=schPos[i],res=results[i],cab=cables.find(c=>c.id===node.cableTypeId);
+    const prevP=i>0?schPos[i-1]:null,sameCol=i>0&&prevP.col===p.col,colChg=i>0&&prevP.col!==p.col;
+    const ok=res?(res.isSafeDrop&&res.isSafeCurrent):true;
+    const midY=sameCol?((i===0?111:prevP.cy)+p.cy)/2:p.cy-25, prevY=i===0?111:prevP.cy;
+    const nr=p.col%2===0;
+    return `${i===0?`<line x1="${BARA_X}" y1="111" x2="${BARA_X}" y2="${p.cy}" stroke="#334155" stroke-width="1.5"/>`:''}
+    ${sameCol?`<line x1="${prevP.cx}" y1="${prevY}" x2="${p.cx}" y2="${p.cy}" stroke="#334155" stroke-width="1.5"/>`:''}
+    ${colChg?`<path d="M ${prevP.cx} ${prevY} L ${prevP.cx} ${p.cy} L ${p.cx} ${p.cy}" fill="none" stroke="#334155" stroke-width="1.5" stroke-linejoin="round"/>`:''}
+    <rect x="${p.cx-28}" y="${midY-10}" width="56" height="20" rx="3" fill="#dbeafe" stroke="#2563eb" stroke-width="0.8"/>
+    <text x="${p.cx}" y="${midY-2}" text-anchor="middle" font-size="5.5" font-weight="bold" fill="#1e40af">${cab?.name||'?'}</text>
+    <text x="${p.cx}" y="${midY+8}" text-anchor="middle" font-size="5.5" fill="#1e40af">${node.length}km</text>
+    <circle cx="${p.cx}" cy="${p.cy}" r="5" fill="${ok?'#334155':'#ef4444'}" stroke="white" stroke-width="1.5"/>
+    ${nr?`<text x="${p.cx+8}" y="${p.cy+4}" font-size="7" font-weight="bold" fill="#1e293b">${node.name||'Hat '+(i+1)}</text>`:
+         `<text x="${p.cx-8}" y="${p.cy+4}" text-anchor="end" font-size="7" font-weight="bold" fill="#1e293b">${node.name||'Hat '+(i+1)}</text>`}
+    ${res?`<text x="${nr?p.cx+8:p.cx-8}" y="${p.cy+14}" ${nr?'':'text-anchor="end"'} font-size="6" fill="${ok?'#2563eb':'#ef4444'}" font-weight="bold">ΔU=${fmt(res.totalDropPercent,2)}%</text>`:''}`; 
+  }).join('')}
+  </svg>`;
+
+  const detailRows=results.map((r,i)=>{
+    const n=nodes[i],cab=cables.find(c=>c.id===n.cableTypeId),ok=r.isSafeDrop&&r.isSafeCurrent,nc=n.circuitCount||1;
+    return `<tr><td><b>${n.name||'Hat '+(i+1)}</b></td><td>${cab?.name||'—'}</td>
+      <td class="mono">${n.length}</td><td class="mono">${nc}</td><td class="mono">${Number(n.loadKVA).toFixed(0)}</td>
+      <td class="mono">${fmt(r.segmentCurrent,2)}</td><td class="mono">${fmt(cab?.ampacity||0,0)}</td>
+      <td class="mono">${fmt(r.voltageDropPercent,3)}</td><td class="mono"><b>${fmt(r.totalDropPercent,3)}</b></td>
+      <td class="mono">${fmt(r.powerLoss,2)}</td>
+      <td><span style="padding:2px 6px;border-radius:4px;font-weight:700;font-size:9px;background:${ok?'#dcfce7':'#fee2e2'};color:${ok?'#166534':'#991b1b'}">${ok?'✓ UYGUN':'✗ UYGUN DEĞİL'}</span></td></tr>`;
   }).join('');
 
+  const cableRows=nodes.map((n,i)=>{
+    const cab=cables.find(c=>c.id===n.cableTypeId),nc=n.circuitCount||1;
+    const R=cab?(cab.r/nc):0,X=cab?(cab.x/nc):0,Rs=R*n.length,Xs=X*n.length,Zs=Math.sqrt(Rs**2+Xs**2);
+    return `<tr><td><b>${n.name||'Hat '+(i+1)}</b></td><td>${cab?.name||'—'}</td>
+      <td class="mono">${n.length}</td><td class="mono">${nc}</td>
+      <td class="mono">${fmt(R,4)}</td><td class="mono">${fmt(X,4)}</td><td class="mono">${fmt(cab?.ampacity||0,0)}</td>
+      <td class="mono">${fmt(Rs,4)}</td><td class="mono">${fmt(Xs,4)}</td><td class="mono"><b>${fmt(Zs,4)}</b></td></tr>`;
+  }).join('');
+
+  const worstNode=results.length?results.reduce((b,r,i)=>r.totalDropPercent>b.v?{v:r.totalDropPercent,i}:b,{v:0,i:0}):null;
+  const worstName=worstNode?(nodes[worstNode.i]?.name||'Hat '+(worstNode.i+1)):'—';
+
   return `
-    <h1>OG Gerilim Düşümü Raporu — 34.5 kV</h1>
-    <div class="meta">Max Düşüm: <b>${metrics.maxDrop.toFixed(3)}%</b> &nbsp;|&nbsp; Toplam Kayıp: <b>${metrics.totalPowerLoss.toFixed(2)} kW</b></div>
-    <h2>Hat Analizi</h2>
-    <table>
-      <thead><tr><th>Hat</th><th>Kablo</th><th>Mesafe (km)</th><th>Yük (kVA)</th><th>Akım (A)</th><th>Segm. (%)</th><th>Toplam (%)</th><th>Kayıp (kW)</th><th>Durum</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
+  <div style="page-break-inside:avoid">
+  <table style="margin-bottom:0;font-size:11px"><tr>
+    <td style="width:55%;vertical-align:top;padding:0">
+      <div style="background:#1e3a5f;color:white;padding:10px 14px;border-radius:6px 6px 0 0">
+        <div style="font-size:16px;font-weight:900">GridMaster</div>
+        <div style="font-size:10px;opacity:.8;margin-top:2px">Elektrik Mühendisliği Hesap Platformu</div>
+      </div>
+      <div style="background:#f1f5f9;padding:8px 14px;border:1px solid #e2e8f0;border-top:none">
+        <div style="font-size:14px;font-weight:900;color:#1e3a5f">OG GERİLİM DÜŞÜMÜ ANALİZİ</div>
+        <div style="font-size:10px;color:#475569;margin-top:2px">IEC 60038 — 34.5 kV Dağıtım Hattı</div>
+      </div>
+    </td>
+    <td style="width:45%;vertical-align:top;padding:0">
+      <table style="width:100%;font-size:10px;margin:0;border:1px solid #e2e8f0">
+        <tr><td style="padding:3px 8px;background:#f8fafc;font-weight:700">Standart</td><td style="padding:3px 8px">IEC 60038 / TS EN 50160</td></tr>
+        <tr><td style="padding:3px 8px;background:#f8fafc;font-weight:700">Tarih</td><td style="padding:3px 8px">${dateStr} ${timeStr}</td></tr>
+        <tr><td style="padding:3px 8px;background:#f8fafc;font-weight:700">Kaynak</td><td style="padding:3px 8px;font-weight:700">${TM}</td></tr>
+        <tr><td style="padding:3px 8px;background:#f8fafc;font-weight:700">Toplam Yük</td><td style="padding:3px 8px">${(totalLoad/1000).toFixed(2)} MVA</td></tr>
+        <tr><td style="padding:3px 8px;background:#f8fafc;font-weight:700">Hat Sayısı</td><td style="padding:3px 8px">${nodes.length}</td></tr>
+      </table>
+    </td>
+  </tr></table>
+  <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:4px">TEK HAT ŞEMASI</div>
+  <div style="margin-bottom:12px">${schemaSvg}</div>
+  </div>
+
+  <div style="margin:16px 0 6px;font-size:13px;font-weight:900;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:4px">1.  GERİLİM DÜŞÜMÜ DETAY RAPORU</div>
+  <div style="font-size:9px;color:#64748b;margin-bottom:6px">Un=34.5kV | İzin verilen maks. düşüm: <b>%5</b> | Akım sınırı: kablo nominal ampasitesi</div>
+  <table>
+    <thead><tr><th>Düğüm</th><th>Kablo</th><th>L(km)</th><th>Devre</th><th>Yük(kVA)</th><th>I_seg(A)</th><th>I_nom(A)</th><th>ΔU_seg(%)</th><th>ΔU_top(%)</th><th>P_kayıp(kW)</th><th>Durum</th></tr></thead>
+    <tbody>${detailRows}</tbody>
+  </table>
+
+  <div style="margin:16px 0 6px;font-size:13px;font-weight:900;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:4px">2.  ÖZET SONUÇLAR</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin:8px 0 16px">
+    <div style="background:#eff6ff;border:2px solid #2563eb;border-radius:8px;padding:10px;text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#1e40af;text-transform:uppercase;margin-bottom:4px">Maks. Gerilim Düşümü</div>
+      <div style="font-size:22px;font-weight:900;color:${metrics.maxDrop>5?'#dc2626':'#1e40af'};font-family:monospace">${fmt(metrics.maxDrop,3)}%</div>
+      <div style="font-size:9px;color:#64748b;margin-top:2px">${worstName}</div>
+      <div style="font-size:9px;font-weight:700;color:${metrics.maxDrop>5?'#dc2626':'#16a34a'}">${metrics.maxDrop>5?'⚠ SINIR AŞILDI':'✓ UYGUN (≤%5)'}</div>
+    </div>
+    <div style="background:#faf5ff;border:2px solid #7c3aed;border-radius:8px;padding:10px;text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#6d28d9;text-transform:uppercase;margin-bottom:4px">Toplam Güç Kaybı</div>
+      <div style="font-size:22px;font-weight:900;color:#6d28d9;font-family:monospace">${fmt(metrics.totalPowerLoss,2)}</div>
+      <div style="font-size:10px;color:#64748b">kW  (%${fmt(metrics.percentPowerLoss||0,3)} kayıp)</div>
+    </div>
+    <div style="background:#f0fdf4;border:2px solid #16a34a;border-radius:8px;padding:10px;text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#15803d;text-transform:uppercase;margin-bottom:4px">Toplam Hat Uzunluğu</div>
+      <div style="font-size:22px;font-weight:900;color:#15803d;font-family:monospace">${fmt(nodes.reduce((s,n)=>s+Number(n.length||0),0),2)}</div>
+      <div style="font-size:10px;color:#64748b">km</div>
+    </div>
+    <div style="background:#fff7ed;border:2px solid #ea580c;border-radius:8px;padding:10px;text-align:center">
+      <div style="font-size:9px;font-weight:700;color:#c2410c;text-transform:uppercase;margin-bottom:4px">Toplam Yük</div>
+      <div style="font-size:22px;font-weight:900;color:#c2410c;font-family:monospace">${fmt(totalLoad/1000,2)}</div>
+      <div style="font-size:10px;color:#64748b">MVA — ${nodes.length} nokta</div>
+    </div>
+  </div>
+
+  <div style="margin:16px 0 6px;font-size:13px;font-weight:900;color:#1e3a5f;border-bottom:2px solid #1e3a5f;padding-bottom:4px">3.  KABLO PARAMETRE TABLOSU</div>
+  <table>
+    <thead><tr><th>Düğüm</th><th>Kablo</th><th>L(km)</th><th>Devre</th><th>R(Ω/km)</th><th>X(Ω/km)</th><th>I_nom(A)</th><th>R_seg(Ω)</th><th>X_seg(Ω)</th><th>Z_seg(Ω)</th></tr></thead>
+    <tbody>${cableRows}</tbody>
+  </table>`;
 }
 
 export function buildTransformerPDF(trafoData, nominalCurrent, ikKA) {

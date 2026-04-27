@@ -50,7 +50,51 @@ export default function OgVoltageDrop({ cables }) {
 
   const updateNode = (i, f, v) => { const n = [...nodes]; n[i][f] = v; setNodes(n); };
   const handleExcelExport = () => exportOgVoltageDrop(nodes, results, cables, metrics);
-  const handlePdfExport = () => exportToPDF('OG Gerilim Düşümü', buildOgVoltageDropPDF(nodes, results, cables, metrics));
+  const handlePdfExport = () => {
+    const tmName = pdfInfo?.sourceName || '';
+    const html = buildOgVoltageDropPDF(nodes, results, cables, metrics, tmName);
+    const win = window.open('', '_blank', 'width=1200,height=850');
+    win.document.write(`<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8">
+    <title>OG Gerilim Düşümü — ${tmName}</title>
+    <style>
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:9.5px;color:#1e293b;background:white;padding:14px}
+      table{width:100%;border-collapse:collapse;margin-bottom:9px;font-size:9px}
+      th{background:#1e3a5f;color:white;padding:4px 6px;text-align:left;font-weight:700;font-size:8px;text-transform:uppercase}
+      td{padding:3px 6px;border-bottom:1px solid #e2e8f0;vertical-align:middle}
+      tr:nth-child(even) td{background:#f8fafc}
+      .mono{font-family:'Consolas','Courier New',monospace}
+      .toolbar{position:fixed;top:10px;right:10px;display:flex;gap:8px;z-index:9999;background:white;padding:8px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.15)}
+      .btn{padding:7px 16px;border:none;border-radius:7px;font-weight:700;cursor:pointer;font-size:11px}
+      .btn-pdf{background:#1e3a5f;color:white}
+      .btn-word{background:#166534;color:white}
+      @media print{.toolbar{display:none!important}body{padding:6px}@page{margin:7mm 8mm;size:A4 landscape}table{page-break-inside:auto}tr{page-break-inside:avoid}svg{max-width:100%!important;height:auto!important}}
+    </style></head><body>
+    <div class="toolbar">
+      <button class="btn btn-pdf" onclick="window.print()">🖨 PDF Yazdır</button>
+      <button class="btn btn-word" onclick="dlWord()">📄 Word İndir</button>
+    </div>
+    ${html}
+    <div style="margin-top:10px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:8px;color:#94a3b8;display:flex;justify-content:space-between">
+      <span>GridMaster — Elektrik Mühendisliği Hesap Platformu</span>
+      <span>IEC 60038 | Un=34.5kV | Maks. izin verilen düşüm: %5</span>
+      <span>${new Date().toLocaleDateString('tr-TR')}</span>
+    </div>
+    <script>
+    function dlWord(){
+      var bc=document.body.cloneNode(true);
+      bc.querySelector('.toolbar')?.remove();
+      bc.querySelectorAll('svg').forEach(s=>{var p=document.createElement('p');p.textContent='[Tek Hat Şeması - PDF versiyonunda mevcuttur]';s.parentNode.replaceChild(p,s);});
+      var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,font-size:10pt}table{border-collapse:collapse;width:100%}th{background:#1e3a5f;color:white;padding:4pt 6pt;font-size:8pt;text-align:left}td{padding:3pt 6pt;border:1px solid #ccc}tr:nth-child(even)td{background:#f9f9f9}.mono{font-family:Courier}</style></head><body>'+bc.innerHTML+'</body></html>';
+      var b=new Blob([h],{type:'application/vnd.ms-word'});
+      var u=URL.createObjectURL(b);var a=document.createElement('a');
+      a.href=u;a.download='OG_Gerilim_Dusuumu_${tmName.replace(/\s+/g,'_')}.doc';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);
+    }
+    <\/script>
+    </body></html>`);
+    win.document.close();
+  };
 
   return (
     <div className="space-y-6">
