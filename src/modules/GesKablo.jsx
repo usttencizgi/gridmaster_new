@@ -15,7 +15,39 @@ const AC_SECTIONS = AG_CABLES.filter(s => s >= 4 && s <= 240);
 
 const getAcIkat = (section, mat) => AG_CABLE_CURRENT_LIMITS[mat]?.[section] ?? 0;
 
-// ─── Hesap Motoru ──────────────────────────────────────────────────
+// ─── Panel-Evirici Uyumluluk Hesabı ──────────────────────────────
+function calcPvUyumluluk({ panel, inverter, strings }) {
+  const { Voc, Vmp, Isc, Imp, kVoc, kVmp, tmin, tmax, tnom } = panel;
+  const { Vdc_max, Vdc_min, Vmppt_max, Vmppt_min, Isc_max } = inverter;
+
+  // Her string grubundaki nSeri değerlerini al (benzersiz)
+  const nSeriList = [...new Set(strings.map(s => s.nSeri))];
+  const results = [];
+
+  nSeriList.forEach(nSeri => {
+    const nPar = strings.filter(s => s.nSeri === nSeri).length;
+    const Voc_cold = nSeri * Voc * (1 + (kVoc / 100) * (tnom - tmin));
+    const Voc_hot  = nSeri * Voc * (1 + (kVoc / 100) * (tnom - tmax));
+    const Vmp_cold = nSeri * Vmp * (1 + (kVmp / 100) * (tnom - tmin));
+    const Vmp_hot  = nSeri * Vmp * (1 + (kVmp / 100) * (tnom - tmax));
+    const Isc_total = Isc * nPar;
+    const Imp_total = Imp * nPar;
+    results.push({
+      nSeri, nPar,
+      checks: [
+        { label:`Voc @ ${tmin}°C (soğuk açık devre)`, val:Voc_cold, op:'<', lim:Vdc_max,   pass:Voc_cold < Vdc_max,   unit:'V', tip:'Evirici maks. DC girişini aşmamalı' },
+        { label:`Voc @ ${tmax}°C (sıcak açık devre)`, val:Voc_hot,  op:'>', lim:Vdc_min,   pass:Voc_hot  > Vdc_min,   unit:'V', tip:'Evirici min. DC girişinin altına düşmemeli' },
+        { label:`Vmp @ ${tmin}°C (soğuk MPPT)`,       val:Vmp_cold, op:'<', lim:Vmppt_max, pass:Vmp_cold < Vmppt_max, unit:'V', tip:'MPPT maks. gerilimini aşmamalı' },
+        { label:`Vmp @ ${tmax}°C (sıcak MPPT)`,       val:Vmp_hot,  op:'>', lim:Vmppt_min, pass:Vmp_hot  > Vmppt_min, unit:'V', tip:'MPPT min. geriliminin altına düşmemeli' },
+        { label:`Isc toplam (${nPar} dizi paralel)`,   val:Isc_total,op:'<', lim:Isc_max,   pass:Isc_total <= Isc_max,  unit:'A', tip:'Evirici maks. kısa devre giriş akımı' },
+        { label:`Imp toplam (${nPar} dizi paralel)`,   val:Imp_total,op:'<', lim:Isc_max,   pass:Imp_total <= Isc_max,  unit:'A', tip:'Evirici maks. MPPT akımı' },
+      ],
+    });
+  });
+  return results;
+}
+
+
 function calcGes({ panel, sistem, dc, strings, ac1, ac2 }) {
   const { Wp, Vmpp, Impp, Isc } = panel;
   const { Pac, Pmax_inv, Un, cosf } = sistem;
@@ -137,8 +169,18 @@ const DEFAULT_STRING = (idx) => ({ id: Date.now() + idx, code: `${idx + 1}.1`, n
 
 export default function GesKablo() {
   // Panel
-  const [panel, setPanel] = useState({ Wp: 590, Vmpp: 44.14, Impp: 13.37, Isc: 14.16 });
+  const [panel, setPanel] = useState({
+    Wp: 590, Vmpp: 44.14, Impp: 13.37, Isc: 14.16,
+    Voc: 52.40, Vmp: 44.14, Imp: 13.37,
+    kVoc: -0.27, kVmp: -0.35,
+    tmin: -10, tmax: 70, tnom: 25,
+  });
   const P = (k, v) => setPanel(p => ({ ...p, [k]: v }));
+
+  const [inverter, setInverter] = useState({
+    Vdc_max: 1000, Vdc_min: 200, Vmppt_max: 800, Vmppt_min: 200, Isc_max: 30,
+  });
+  const IV = (k, v) => setInverter(iv => ({ ...iv, [k]: v }));
 
   // Sistem
   const [sistem, setSistem] = useState({ Pac: 25, Pmax_inv: 175, Un: 400, cosf: 1.0 });
@@ -184,7 +226,11 @@ export default function GesKablo() {
 
   // Hesap
   const [res, setRes] = useState(null);
-  const hesapla = () => setRes(calcGes({ panel, sistem, dc, strings, ac1, ac2 }));
+  const hesapla = () => {
+    const r = calcGes({ panel, sistem, dc, strings, ac1, ac2 });
+    r.pvUyumluluk = calcPvUyumluluk({ panel, inverter, strings });
+    setRes(r);
+  };
 
   const allOk = res && res.dcAkimOk && res.gucOk && res.ac1Ok && res.ac2Ok;
 
@@ -215,7 +261,7 @@ export default function GesKablo() {
         </button>
         {res && (
           <button
-            onClick={() => exportGesKabloWord(panel, sistem, dc, strings, ac1, ac2, res)}
+            onClick={() => exportGesKabloWord(panel, sistem, dc, strings, ac1, ac2, res, inverter)}
             className="bg-white/20 hover:bg-white/30 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all">
             📄 Word
           </button>
@@ -251,6 +297,12 @@ export default function GesKablo() {
               <Field label="Vmpp"            value={panel.Vmpp} onChange={v=>P('Vmpp',v)} unit="V" step="0.01" />
               <Field label="Impp"            value={panel.Impp} onChange={v=>P('Impp',v)} unit="A" step="0.01" />
               <Field label="Isc"             value={panel.Isc}  onChange={v=>P('Isc',v)}  unit="A" step="0.01" />
+              <Field label="Voc"             value={panel.Voc}  onChange={v=>P('Voc',v)}  unit="V" step="0.01" />
+              <Field label="αVoc (%/°C)"     value={panel.kVoc} onChange={v=>P('kVoc',v)} unit="%/°C" step="0.01" />
+              <Field label="αVmp (%/°C)"     value={panel.kVmp} onChange={v=>P('kVmp',v)} unit="%/°C" step="0.01" />
+              <Field label="T_min (°C)"      value={panel.tmin} onChange={v=>P('tmin',v)} unit="°C" step="1" />
+              <Field label="T_max (°C)"      value={panel.tmax} onChange={v=>P('tmax',v)} unit="°C" step="1" />
+              <Field label="T_nom (°C)"      value={panel.tnom} onChange={v=>P('tnom',v)} unit="°C" step="1" />
             </div>
           </div>
 
@@ -262,6 +314,16 @@ export default function GesKablo() {
               <Field label="Max. Panel Girişi (Pmax)" value={sistem.Pmax_inv} onChange={v=>S('Pmax_inv',v)} unit="kW" />
               <Field label="AC Gerilim (Un)"          value={sistem.Un}       onChange={v=>S('Un',v)}       unit="V"   />
               <Field label="Cosφ"                     value={sistem.cosf}     onChange={v=>S('cosf',v)}     unit=""  step="0.01" />
+            </div>
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <div className="text-[10px] font-bold text-purple-500 uppercase mb-2">Evirici DC Giriş Parametreleri</div>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Maks. DC Giriş (Vdc_max)" value={inverter.Vdc_max}   onChange={v=>IV('Vdc_max',v)}   unit="V" step="10" />
+                <Field label="Min. DC Giriş (Vdc_min)"  value={inverter.Vdc_min}   onChange={v=>IV('Vdc_min',v)}   unit="V" step="10" />
+                <Field label="MPPT Maks. (Vmppt_max)"   value={inverter.Vmppt_max} onChange={v=>IV('Vmppt_max',v)} unit="V" step="10" />
+                <Field label="MPPT Min. (Vmppt_min)"    value={inverter.Vmppt_min} onChange={v=>IV('Vmppt_min',v)} unit="V" step="10" />
+                <Field label="Maks. Isc Girişi"         value={inverter.Isc_max}   onChange={v=>IV('Isc_max',v)}   unit="A" step="1"  />
+              </div>
             </div>
           </div>
 
@@ -597,6 +659,44 @@ export default function GesKablo() {
           </>)}
         </div>
       </div>
+
+      {/* PV UYUMLULUK SONUÇLARI */}
+      {res?.pvUyumluluk?.length > 0 && (
+        <div className="bg-white p-5 rounded-xl shadow-sm border">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-3 h-3 rounded-full bg-purple-500"/>
+            <h3 className="font-black text-slate-700 text-sm uppercase tracking-wide">Panel — Evirici Uyumluluk</h3>
+            <span className="ml-auto text-[10px] text-slate-400">Voc & Vmp sıcaklık düzeltmeli kontrol</span>
+          </div>
+          {res.pvUyumluluk.map((grp, gi) => (
+            <div key={gi} className="mb-4">
+              <div className="text-xs font-bold text-purple-600 mb-2">
+                {grp.nSeri} seri × {grp.nPar} paralel dizi
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {grp.checks.map((c, ci) => (
+                  <div key={ci} className={`flex items-center justify-between px-4 py-2.5 rounded-xl border ${c.pass ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-300'}`}>
+                    <div>
+                      <span className="text-xs font-bold text-slate-700">{c.label}</span>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{c.tip}</p>
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+                      <span className={`font-mono font-black text-sm ${c.pass ? 'text-green-700' : 'text-red-600'}`}>
+                        {c.val.toFixed(2)} {c.unit}
+                      </span>
+                      <span className="text-slate-400 font-mono">{c.op}</span>
+                      <span className="font-mono text-sm text-slate-600">{c.lim} {c.unit}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${c.pass ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                        {c.pass ? '✓' : '✗'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

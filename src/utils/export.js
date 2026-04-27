@@ -825,7 +825,7 @@ export function buildAgShortCircuitPDF(trafoKva, trafoUk, calcResult) {
 }
 
 // ─── GES KABLO WORD EXPORT ────────────────────────────────────────────────────
-export async function exportGesKabloWord(panel, sistem, dc, strings, ac1, ac2, res) {
+export async function exportGesKabloWord(panel, sistem, dc, strings, ac1, ac2, res, inverter) {
   const {
     Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
     AlignmentType, BorderStyle, WidthType, ShadingType, PageBreak
@@ -1075,6 +1075,60 @@ export async function exportGesKabloWord(panel, sistem, dc, strings, ac1, ac2, r
       ]
     }]
   });
+
+  // PV Uyumluluk ek bölüm — ayrı section olarak ekle
+  if (res.pvUyumluluk?.length > 0) {
+    const pvSec = {
+      properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 900, right: 800, bottom: 900, left: 800 } } },
+      children: [
+        new Paragraph({ children: [new PageBreak()] }),
+        new Paragraph({ spacing:{before:200,after:120},
+          border:{bottom:{style:BorderStyle.SINGLE,size:4,color:'1F5C99',space:2}},
+          children:[new TextRun({text:'4.  PANEL — EVİRİCİ UYUMLULUK KONTROLÜ',bold:true,font:'Arial',size:26,color:'1F5C99'})] }),
+        new Paragraph({spacing:{before:80,after:40}, children:[new TextRun({
+          text:`Panel: Voc=${panel.Voc}V  |  kVoc=${panel.kVoc}%/°C  |  Vmp=${panel.Vmpp}V  |  kVmp=${panel.kVmp||'-0.35'}%/°C  |  Tmin=${panel.tmin}°C, Tmax=${panel.tmax}°C, Tnom=${panel.tnom}°C`,
+          font:'Arial',size:18,color:'475569'})]}),
+        new Paragraph({spacing:{before:40,after:120}, children:[new TextRun({
+          text:`Evirici: Vdc_max=${inverter?.Vdc_max||1000}V  |  Vdc_min=${inverter?.Vdc_min||200}V  |  Vmppt_max=${inverter?.Vmppt_max||800}V  |  Vmppt_min=${inverter?.Vmppt_min||200}V  |  Isc_max=${inverter?.Isc_max||30}A`,
+          font:'Arial',size:18,color:'475569'})]}),
+        ...res.pvUyumluluk.flatMap(grp => [
+          new Paragraph({spacing:{before:160,after:60}, children:[new TextRun({
+            text:`${grp.nSeri} seri × ${grp.nPar} paralel dizi`,bold:true,font:'Arial',size:20,color:'5B21B6'})]}),
+          new Table({ width:{size:9100,type:WidthType.DXA}, columnWidths:[2800,1500,600,1500,1700],
+            rows:[
+              hRow(['Kontrol','Hesaplanan','Op.','Sınır','Sonuç'],[2800,1500,600,1500,1700]),
+              ...grp.checks.map(c => new TableRow({ children:[
+                new TableCell({borders:ab(),margins:{top:50,bottom:50,left:100,right:100},children:[
+                  new Paragraph({children:[new TextRun({text:c.label,font:'Arial',size:18})]}),
+                  new Paragraph({children:[new TextRun({text:c.tip,font:'Arial',size:16,color:'94A3B8'})]}),
+                ]}),
+                new TableCell({borders:ab(),margins:{top:50,bottom:50,left:100,right:100},
+                  shading:{fill:c.pass?'C6EFCE':'FFC7CE',type:ShadingType.CLEAR},
+                  children:[new Paragraph({alignment:AlignmentType.CENTER,children:[
+                    new TextRun({text:`${c.val.toFixed(2)} ${c.unit}`,bold:true,font:'Courier New',size:18,color:c.pass?'276221':'9C0006'})
+                  ]})]
+                }),
+                new TableCell({borders:ab(),margins:{top:50,bottom:50,left:100,right:100},children:[
+                  new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:c.op,font:'Arial',size:20,bold:true})]})
+                ]}),
+                new TableCell({borders:ab(),margins:{top:50,bottom:50,left:100,right:100},children:[
+                  new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({text:`${c.lim} ${c.unit}`,font:'Courier New',size:18})]})
+                ]}),
+                new TableCell({borders:ab(),margins:{top:50,bottom:50,left:100,right:100},
+                  shading:{fill:c.pass?'C6EFCE':'FFC7CE',type:ShadingType.CLEAR},
+                  children:[new Paragraph({alignment:AlignmentType.CENTER,children:[
+                    new TextRun({text:c.pass?'✓ UYGUN':'✗ UYGUN DEĞİL',bold:true,font:'Arial',size:18,color:c.pass?'276221':'9C0006'})
+                  ]})]
+                }),
+              ]})),
+            ]
+          }),
+          new Paragraph({spacing:{before:80,after:0},children:[]}),
+        ]),
+      ]
+    };
+    doc.addSection(pvSec);
+  }
 
   const blob = await Packer.toBlob(doc);
   const url  = URL.createObjectURL(blob);
