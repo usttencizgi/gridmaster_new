@@ -131,12 +131,26 @@ export default function CatiTasarim(){
   const strBlockWpx=(str)=>str.cols*panW*sc+(str.cols-1)*cg*sc;
   const strBlockHpx=(str)=>str.rows*panH*sc+(str.rows-1)*rg*sc;
 
+  // ── Ölçüm aleti ───────────────────────────────────────────────
+  // Ruler: iki nokta arası Manhattan mesafe
+  const [rulerPts,setRulerPts]=useState([]);  // [{x,y}] max 2
+  const [rulerCur,setRulerCur]=useState(null);
+
+  // ── Panel işaretleme (string kablo ölçümü) ────────────────────
+  // Kullanıcı canvas üzerinde iki nokta işaretler (ilk/son panel)
+  // Toplam kablo = Manhattan(A→inv) + Manhattan(B→inv) + 2×vertOff
+  const [markedPts,setMarkedPts]=useState([]); // [{x,y}] max 2
+  const [cableResult,setCableResult]=useState(null);
+
   // ── Mouse Move ────────────────────────────────────────────────
   const onMM=e=>{
     const pt=getSvgPt(e);
 
     if(mod==='draw'&&drawing&&!dimVal){
       const s=getSnap(pt.x,pt.y);setCur(s);
+    }
+    if((mod==='ruler'||mod==='cable')&&rulerPts.length===1){
+      setRulerCur({x:pt.x,y:pt.y});
     }
     if(mod==='edit'&&dragCorner!==null){
       setPoly(p=>p.map((v,i)=>i===dragCorner?[pt.x,pt.y]:v));
@@ -221,6 +235,37 @@ export default function CatiTasarim(){
 
   // ── Click (çatı çizimi) ────────────────────────────────────────
   const onClick=e=>{
+    if(mod==='ruler'){
+      const pt=getSvgPt(e);
+      setRulerPts(p=>{
+        if(p.length>=2) return [{x:pt.x,y:pt.y}];
+        return [...p,{x:pt.x,y:pt.y}];
+      });
+      setRulerCur(null);
+      return;
+    }
+    if(mod==='cable'){
+      const pt=getSvgPt(e);
+      setMarkedPts(p=>{
+        if(p.length>=2) return [{x:pt.x,y:pt.y}];
+        return [...p,{x:pt.x,y:pt.y}];
+      });
+      setRulerCur(null);
+      // 2. nokta gelince hesapla
+      setMarkedPts(p=>{
+        const updated=p.length>=2?[{x:pt.x,y:pt.y}]:[...p,{x:pt.x,y:pt.y}];
+        if(updated.length===2&&inverters.length>0){
+          const inv=inverters[0];
+          const a=updated[0],b=updated[1];
+          const da=(Math.abs(a.x-inv.x)+Math.abs(a.y-inv.y))/sc;
+          const db=(Math.abs(b.x-inv.x)+Math.abs(b.y-inv.y))/sc;
+          const total=da+db+2*vOff;
+          setCableResult({da:da.toFixed(2),db:db.toFixed(2),vOff,total:total.toFixed(2)});
+        }
+        return updated;
+      });
+      return;
+    }
     if(mod!=='draw')return;
     const pt=getSvgPt(e);
     if(!drawing){setPoly([[pt.x,pt.y]]);setDrawing(true);setCur({x:pt.x,y:pt.y,sn:false});return;}
@@ -248,6 +293,7 @@ export default function CatiTasarim(){
   const resetAll=()=>{
     setPoly([]);setDrawing(false);setCur(null);setDimVal('');
     setObstacles([]);setStrBlocks([]);setInverters([]);setMaxFill(null);
+    setRulerPts([]);setRulerCur(null);setMarkedPts([]);setCableResult(null);
   };
 
   // ── Kenar uzunlukları ─────────────────────────────────────────
@@ -295,12 +341,16 @@ export default function CatiTasarim(){
               {mbtn('draw',    '✏️','Çatı Çiz','blue')}
               {mbtn('edit',    '↗️','Düzenle / Taşı','amber')}
               {mbtn('inverter','⚡','İnverter Ekle','yellow')}
+              {mbtn('ruler',   '📏','Mesafe Ölç','emerald')}
+              {mbtn('cable',   '🔌','Kablo Ölç','purple')}
               {mbtn('view',    '👁️','İncele','slate')}
             </div>
             <div className="mt-2 p-2 bg-slate-50 rounded-lg text-[10px] text-slate-500 leading-relaxed">
               {mod==='draw'&&<><b>Tıkla</b>→nokta · <b>Dbl/Enter</b>→kapat · <b>Mesafe+Enter</b>→tam kenar · <b>Esc</b>→iptal</>}
               {mod==='edit'&&<><b>Köşe sürükle</b> · <b>Kenar orta</b>→yeni köşe · <b>Blok/Engel sürükle</b>→taşı</>}
               {mod==='inverter'&&'Canvas\'a tıkla → inverter ekle'}
+              {mod==='ruler'&&<><b>1. tıkla</b> → başlangıç · <b>2. tıkla</b> → bitiş → Manhattan mesafe gösterir</>}
+              {mod==='cable'&&<><b>1. tıkla</b> → ilk panel (A) · <b>2. tıkla</b> → son panel (B) → her ikisinden invertere kablo mesafesi</>}
               {mod==='view'&&'String etiketlerini ve bağlantıları gör'}
             </div>
           </div>
@@ -387,6 +437,23 @@ export default function CatiTasarim(){
             <input type="range" min={8} max={80} step={2} value={sc}
               onChange={e=>setSc(+e.target.value)} className="w-full accent-sky-500"/>
           </div>
+
+          {cableResult&&(
+            <div className="bg-indigo-50 border-2 border-indigo-300 p-4 rounded-xl">
+              <div className="text-[10px] font-bold text-indigo-500 uppercase mb-2">🔌 DC Kablo Sonucu</div>
+              <div className="space-y-1 text-xs font-mono">
+                <div className="flex justify-between"><span className="text-indigo-700">A (ilk panel) → İnv</span><span className="font-bold">{cableResult.da} m</span></div>
+                <div className="flex justify-between"><span className="text-pink-700">B (son panel) → İnv</span><span className="font-bold">{cableResult.db} m</span></div>
+                {cableResult.vOff>0&&<div className="flex justify-between"><span className="text-slate-500">Dikey (×2)</span><span className="font-bold">{(cableResult.vOff*2).toFixed(1)} m</span></div>}
+                <div className="border-t border-indigo-200 pt-1 mt-1 flex justify-between">
+                  <span className="font-bold text-indigo-800">Toplam</span>
+                  <span className="font-black text-indigo-800 text-sm">{cableResult.total} m</span>
+                </div>
+              </div>
+              <button onClick={()=>{setMarkedPts([]);setCableResult(null);}}
+                className="w-full mt-2 text-[10px] text-indigo-400 hover:text-indigo-600 font-bold">Temizle</button>
+            </div>
+          )}
 
           <button onClick={resetAll} className="w-full border-2 border-slate-200 text-slate-400 hover:border-red-300 hover:text-red-400 font-bold py-2 rounded-xl text-xs">Hepsini Sıfırla</button>
         </div>
@@ -517,6 +584,54 @@ export default function CatiTasarim(){
                   </g>
                 </g>
               ))}
+
+              {/* Ruler — ölçüm aleti */}
+              {rulerPts.length>=1&&(()=>{
+                const a=rulerPts[0];
+                const b=rulerPts.length>=2?rulerPts[1]:rulerCur;
+                if(!b)return null;
+                const dx=Math.abs(b.x-a.x)/sc,dy=Math.abs(b.y-a.y)/sc;
+                const manhattan=(dx+dy).toFixed(2);
+                const straight=Math.sqrt(dx*dx+dy*dy).toFixed(2);
+                const midX=(a.x+b.x)/2,midY=(a.y+b.y)/2;
+                return(<g>
+                  {/* L şekli çizgi */}
+                  <polyline points={`${a.x},${a.y} ${b.x},${a.y} ${b.x},${b.y}`}
+                    fill="none" stroke="#10b981" strokeWidth="1.5" strokeDasharray="5,3"/>
+                  <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#10b981" strokeWidth="1" strokeDasharray="3,3" opacity="0.4"/>
+                  <circle cx={a.x} cy={a.y} r={5} fill="#10b981" stroke="white" strokeWidth="2"/>
+                  <circle cx={b.x} cy={b.y} r={5} fill="#10b981" stroke="white" strokeWidth="2"/>
+                  <rect x={midX-38} y={midY-22} width={76} height={26} rx={5} fill="#10b981" opacity="0.95"/>
+                  <text x={midX} y={midY-8} textAnchor="middle" fontSize="9" fontWeight="bold" fill="white">📏 {manhattan}m (köşeli)</text>
+                  <text x={midX} y={midY+5} textAnchor="middle" fontSize="8" fill="white" opacity="0.85">kuş uçuşu: {straight}m</text>
+                </g>);
+              })()}
+
+              {/* Kablo ölçüm noktaları */}
+              {markedPts.map((p,i)=>(
+                <g key={i}>
+                  <circle cx={p.x} cy={p.y} r={10} fill={i===0?'#7c3aed':'#db2777'} stroke="white" strokeWidth="2.5"/>
+                  <text x={p.x} y={p.y+4} textAnchor="middle" fontSize="9" fontWeight="bold" fill="white">{i===0?'A':'B'}</text>
+                  {/* Invertere L çizgisi */}
+                  {inverters.length>0&&(()=>{
+                    const inv=inverters[0];
+                    return(<polyline points={`${p.x},${p.y} ${inv.x},${p.y} ${inv.x},${inv.y}`}
+                      fill="none" stroke={i===0?'#7c3aed':'#db2777'} strokeWidth="1.5" strokeDasharray="6,3" opacity="0.7"/>);
+                  })()}
+                </g>
+              ))}
+
+              {/* Kablo ölçüm sonuç kutusu */}
+              {cableResult&&markedPts.length===2&&(()=>{
+                const cx=(markedPts[0].x+markedPts[1].x)/2;
+                const cy=Math.min(markedPts[0].y,markedPts[1].y)-60;
+                return(<g>
+                  <rect x={cx-70} y={cy} width={140} height={52} rx={8} fill="#4f46e5" opacity="0.95"/>
+                  <text x={cx} y={cy+14} textAnchor="middle" fontSize="9" fontWeight="bold" fill="white">🔌 DC Kablo Mesafesi</text>
+                  <text x={cx} y={cy+27} textAnchor="middle" fontSize="8" fill="white" opacity="0.9">A→İnv: {cableResult.da}m · B→İnv: {cableResult.db}m</text>
+                  <text x={cx} y={cy+40} textAnchor="middle" fontSize="9" fontWeight="bold" fill="#fbbf24">Toplam: {cableResult.total}m (+{cableResult.vOff}m dikey)</text>
+                </g>);
+              })()}
 
               {/* İnverterler */}
               {inverters.map((iv,ii)=>(
