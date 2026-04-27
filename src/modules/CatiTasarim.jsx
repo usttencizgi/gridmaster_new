@@ -53,6 +53,61 @@ const COLS=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316
 export default function CatiTasarim(){
   const SW=780,SH=520;
 
+  // DXF import
+  const [dxfEntities,setDxfEntities]=useState([]); // parse edilmiş polyline'lar
+  const [dxfSel,setDxfSel]=useState(null);          // seçili entity index
+  const [dxfModal,setDxfModal]=useState(false);
+  const dxfRef=useRef(null);
+
+  const parseDxf=async(file)=>{
+    const text=await file.text();
+    try{
+      const DxfParser=(await import('dxf-parser')).default;
+      const parser=new DxfParser();
+      const dxf=parser.parseSync(text);
+      const ents=[];
+      (dxf.entities||[]).forEach(e=>{
+        if(e.type==='LWPOLYLINE'||e.type==='POLYLINE'){
+          const pts=(e.vertices||[]).map(v=>[v.x,v.y]);
+          if(pts.length>=3) ents.push({type:e.type,pts,layer:e.layer||'0'});
+        }
+        if(e.type==='LINE'){
+          // Tekil çizgiler — gruplamıyoruz, skip
+        }
+      });
+      if(!ents.length){alert('DXF dosyasında kapalı polyline bulunamadı.\nLütfen çatı dış hattını LWPOLYLINE veya POLYLINE olarak çizin.');return;}
+      setDxfEntities(ents);
+      setDxfSel(0);
+      setDxfModal(true);
+    }catch(err){
+      alert('DXF okunamadı: '+err.message);
+    }
+  };
+
+  const applyDxf=()=>{
+    if(dxfSel===null||!dxfEntities[dxfSel])return;
+    const ent=dxfEntities[dxfSel];
+    const pts=ent.pts;
+    // Bounding box
+    const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
+    const mnX=Math.min(...xs),mxX=Math.max(...xs),mnY=Math.min(...ys),mxY=Math.max(...ys);
+    const wM=mxX-mnX,hM=mxY-mnY;
+    if(wM===0||hM===0){alert('Geçersiz geometri');return;}
+    // Canvas'a sığdır
+    const margin=40;
+    const fitSc=Math.min((780-margin*2)/wM,(520-margin*2)/hM);
+    setSc(Math.round(Math.min(fitSc,60)));
+    const newSc=Math.min(fitSc,60);
+    // DXF Y ekseni ters (AutoCAD Y yukarı, SVG Y aşağı)
+    const mapped=pts.map(([x,y])=>[
+      margin+(x-mnX)*newSc,
+      margin+(mxY-y)*newSc,   // Y'yi çevir
+    ]);
+    setPoly(mapped);
+    setDrawing(false);setCur(null);setDimVal('');setPanels&&setPanels([]);
+    setDxfModal(false);setDxfEntities([]);
+  };
+
   // Ölçek
   const [sc,setSc]=useState(28);
 
@@ -296,6 +351,20 @@ export default function CatiTasarim(){
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
         {/* SOL */}
         <div className="space-y-3">
+
+          <div className="bg-white p-4 rounded-xl border">
+            <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">DXF / DWG İçe Aktar</div>
+            <input ref={dxfRef} type="file" accept=".dxf,.DXF" className="hidden"
+              onChange={e=>{if(e.target.files[0])parseDxf(e.target.files[0]);e.target.value='';}}/>
+            <button onClick={()=>dxfRef.current?.click()}
+              className="w-full bg-slate-700 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2">
+              📐 DXF Dosyası Yükle
+            </button>
+            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+              AutoCAD'de <b>File → Save As → DXF</b> ile export edin.
+              Çatı hattını <b>LWPOLYLINE</b> olarak çizin.
+            </p>
+          </div>
 
           <div className="bg-white p-4 rounded-xl border">
             <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Mod</div>
@@ -677,6 +746,58 @@ export default function CatiTasarim(){
           )}
         </div>
       </div>
+      {/* DXF Entity Seçim Modalı */}
+      {dxfModal&&(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+            <div className="bg-slate-700 text-white px-6 py-4 rounded-t-2xl flex items-center justify-between">
+              <div>
+                <div className="font-black">DXF Dosyası Okundu</div>
+                <div className="text-xs text-slate-300 mt-0.5">{dxfEntities.length} adet kapalı polyline bulundu</div>
+              </div>
+              <button onClick={()=>{setDxfModal(false);setDxfEntities([]);}}
+                className="bg-white/20 hover:bg-white/30 rounded-lg p-1.5 transition-all">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-slate-600 mb-4">Çatı hattı olarak kullanmak istediğiniz polyline'ı seçin:</p>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {dxfEntities.map((e,i)=>{
+                  const xs=e.pts.map(p=>p[0]),ys=e.pts.map(p=>p[1]);
+                  const w=(Math.max(...xs)-Math.min(...xs)).toFixed(2);
+                  const h=(Math.max(...ys)-Math.min(...ys)).toFixed(2);
+                  return(
+                    <button key={i} onClick={()=>setDxfSel(i)}
+                      className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${dxfSel===i?'bg-blue-50 border-blue-500':'border-slate-200 hover:border-blue-300'}`}>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="font-bold text-sm text-slate-700">{e.type}</span>
+                          <span className="ml-2 text-xs text-slate-400">Katman: {e.layer}</span>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono text-xs font-bold text-blue-700">{w} × {h} m</div>
+                          <div className="text-[10px] text-slate-400">{e.pts.length} köşe</div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex gap-3 mt-5">
+                <button onClick={()=>{setDxfModal(false);setDxfEntities([]);}}
+                  className="flex-1 border-2 border-slate-200 text-slate-500 font-bold py-3 rounded-xl text-sm hover:border-slate-300 transition-all">
+                  İptal
+                </button>
+                <button onClick={applyDxf} disabled={dxfSel===null}
+                  className="flex-1 bg-blue-500 hover:bg-blue-600 disabled:opacity-40 text-white font-black py-3 rounded-xl text-sm transition-all">
+                  Canvas'a Uygula →
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
