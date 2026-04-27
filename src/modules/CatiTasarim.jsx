@@ -237,32 +237,26 @@ export default function CatiTasarim(){
   const onClick=e=>{
     if(mod==='ruler'){
       const pt=getSvgPt(e);
-      setRulerPts(p=>{
-        if(p.length>=2) return [{x:pt.x,y:pt.y}];
-        return [...p,{x:pt.x,y:pt.y}];
-      });
+      setRulerPts(p=>p.length>=2?[{x:pt.x,y:pt.y}]:[...p,{x:pt.x,y:pt.y}]);
       setRulerCur(null);
       return;
     }
     if(mod==='cable'){
       const pt=getSvgPt(e);
-      setMarkedPts(p=>{
-        if(p.length>=2) return [{x:pt.x,y:pt.y}];
-        return [...p,{x:pt.x,y:pt.y}];
-      });
-      setRulerCur(null);
-      // 2. nokta gelince hesapla
-      setMarkedPts(p=>{
-        const updated=p.length>=2?[{x:pt.x,y:pt.y}]:[...p,{x:pt.x,y:pt.y}];
-        if(updated.length===2&&inverters.length>0){
+      setMarkedPts(prev=>{
+        const next=prev.length>=2?[{x:pt.x,y:pt.y}]:[...prev,{x:pt.x,y:pt.y}];
+        // Hesabı sonraki tick'te yap
+        if(next.length===2&&inverters.length>0){
           const inv=inverters[0];
-          const a=updated[0],b=updated[1];
+          const a=next[0],b=next[1];
           const da=(Math.abs(a.x-inv.x)+Math.abs(a.y-inv.y))/sc;
           const db=(Math.abs(b.x-inv.x)+Math.abs(b.y-inv.y))/sc;
           const total=da+db+2*vOff;
-          setCableResult({da:da.toFixed(2),db:db.toFixed(2),vOff,total:total.toFixed(2)});
+          setTimeout(()=>setCableResult({da:da.toFixed(2),db:db.toFixed(2),vOff,total:total.toFixed(2)}),0);
+        } else if(next.length===1){
+          setTimeout(()=>setCableResult(null),0);
         }
-        return updated;
+        return next;
       });
       return;
     }
