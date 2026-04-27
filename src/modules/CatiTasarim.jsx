@@ -427,8 +427,18 @@ export default function CatiTasarim(){
                   </div>
                 ))}
               </div>
+              {/* Toplam */}
+              <div className="mt-2 border-t border-slate-200 pt-2 flex items-center justify-between px-2">
+                <span className="text-xs font-black text-slate-700">Toplam ({cableTable.length} string)</span>
+                <span className="font-black font-mono text-emerald-700 text-sm">
+                  {cableTable.reduce((s,r)=>s+parseFloat(r.total),0).toFixed(2)} m
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 text-right px-2 mb-2">
+                ×2 (+ / −) = {(cableTable.reduce((s,r)=>s+parseFloat(r.total),0)*2).toFixed(2)} m toplam kablo
+              </div>
               <button onClick={exportDC}
-                className="w-full mt-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2 rounded-lg text-xs">
+                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2 rounded-lg text-xs">
                 ⚡ DC Dizi Tanımlarına Aktar
               </button>
             </div>
