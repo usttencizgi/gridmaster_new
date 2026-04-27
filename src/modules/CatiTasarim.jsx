@@ -356,10 +356,15 @@ export default function CatiTasarim(){
     if(!cableTable.length)return;
     const lines=cableTable.map((r,i)=>{
       const blk=strBlocks[i];
-      return{id:r.id,code:r.label,nSeri:blk?blk.rows*blk.cols:12,L:parseFloat(r.total)};
+      return{
+        id:r.id,
+        code:r.label,
+        nSeri:blk?blk.rows*blk.cols:12,
+        L:parseFloat(r.halfL||r.total/2), // hesap için ÷2
+      };
     });
     localStorage.setItem('catiDCLines',JSON.stringify(lines));
-    alert(`${lines.length} string DC Dizi Tanımlarına aktarıldı.\nGES Kablo modülünde "Çatıdan Yükle" butonuna basın.`);
+    alert(`${lines.length} string DC Dizi Tanımlarına aktarıldı.\nHesap uzunluğu (÷2): ${lines.map(l=>l.L.toFixed(2)+'m').join(', ')}\n\nGES Kablo modülünde "Çatıdan Yükle" butonuna basın.`);
   };
 
   const resetAll=()=>{
@@ -591,6 +596,9 @@ export default function CatiTasarim(){
                 <div className="text-[10px] text-slate-400 text-right">
                   ×2 (pos+neg) = {cableTable.reduce((s,r)=>s+parseFloat(r.total),0).toFixed(2)} m fiziksel kablo
                 </div>
+              </div>
+              <div className="text-[10px] text-amber-600 bg-amber-50 rounded-lg px-2 py-1.5 mb-2">
+                ⚡ Aktarımda <b>hesap uzunluğu (÷2)</b> kullanılır
               </div>
               <button onClick={exportDC}
                 className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2 rounded-lg text-xs">
