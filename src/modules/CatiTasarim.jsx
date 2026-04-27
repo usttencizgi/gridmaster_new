@@ -88,24 +88,34 @@ export default function CatiTasarim(){
     if(dxfSel===null||!dxfEntities[dxfSel])return;
     const ent=dxfEntities[dxfSel];
     const pts=ent.pts;
-    // Bounding box
     const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
     const mnX=Math.min(...xs),mxX=Math.max(...xs),mnY=Math.min(...ys),mxY=Math.max(...ys);
     const wM=mxX-mnX,hM=mxY-mnY;
     if(wM===0||hM===0){alert('Geçersiz geometri');return;}
-    // Canvas'a sığdır
     const margin=40;
+    // Ölçeği hesapla — küçük çatılar için yakın, büyük için uzak
     const fitSc=Math.min((780-margin*2)/wM,(520-margin*2)/hM);
-    setSc(Math.round(Math.min(fitSc,60)));
-    const newSc=Math.min(fitSc,60);
-    // DXF Y ekseni ters (AutoCAD Y yukarı, SVG Y aşağı)
+    const newSc=Math.max(8,Math.min(Math.round(fitSc),60));
+    // DXF Y ekseni ters (AutoCAD ↑, SVG ↓)
     const mapped=pts.map(([x,y])=>[
       margin+(x-mnX)*newSc,
-      margin+(mxY-y)*newSc,   // Y'yi çevir
+      margin+(mxY-y)*newSc,
     ]);
+    // Tek batch'te tüm state güncellemeleri
+    setSc(newSc);
     setPoly(mapped);
-    setDrawing(false);setCur(null);setDimVal('');setPanels&&setPanels([]);
-    setDxfModal(false);setDxfEntities([]);
+    setDrawing(false);
+    setCur(null);
+    setDimVal('');
+    setStrBlocks([]);
+    setObst([]);
+    setInverters([]);
+    setMaxFill(null);
+    setMarkedPts([]);
+    setCableTable([]);
+    setDxfModal(false);
+    setDxfEntities([]);
+    setDxfSel(null);
   };
 
   // Ölçek
