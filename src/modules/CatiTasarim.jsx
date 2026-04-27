@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import DxfParser from 'dxf-parser';
 
 // ─── Geo ─────────────────────────────────────────────────────────
 function ptInPoly(px,py,poly){
@@ -62,7 +63,6 @@ export default function CatiTasarim(){
   const parseDxf=async(file)=>{
     const text=await file.text();
     try{
-      const DxfParser=(await import('dxf-parser')).default;
       const parser=new DxfParser();
       const dxf=parser.parseSync(text);
       const ents=[];
