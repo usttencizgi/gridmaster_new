@@ -352,7 +352,21 @@ export default function GesKablo() {
 
           {/* DC Diziler */}
           <div className="bg-white p-5 rounded-xl shadow-sm border">
-            <CardHead color="yellow" label="DC Dizi Tanımları" />
+            <div className="flex items-center justify-between mb-3">
+              <CardHead color="yellow" label="DC Dizi Tanımları" />
+              <button onClick={()=>{
+                try{
+                  const data=localStorage.getItem('catiDCLines');
+                  if(!data){alert('Çatı tasarım modülünden henüz aktarım yapılmamış.');return;}
+                  const lines=JSON.parse(data);
+                  setStrings(lines.map(l=>({id:l.id||Date.now()+Math.random(),code:l.code,nSeri:l.nSeri,L:l.L})));
+                  localStorage.removeItem('catiDCLines');
+                }catch(e){alert('Aktarım verisi okunamadı.');}
+              }}
+                className="text-xs bg-sky-50 hover:bg-sky-100 border border-sky-300 text-sky-700 font-bold px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5">
+                🏠 Çatıdan Yükle
+              </button>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>

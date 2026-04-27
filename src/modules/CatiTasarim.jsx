@@ -142,6 +142,55 @@ export default function CatiTasarim(){
   const [markedPts,setMarkedPts]=useState([]); // [{x,y}] max 2
   const [cableResult,setCableResult]=useState(null);
 
+  // Kablo hesabı: markedPts değişince useEffect ile hesapla
+  useEffect(()=>{
+    if(markedPts.length===2&&inverters.length>0){
+      const inv=inverters[0];
+      const a=markedPts[0],b=markedPts[1];
+      const da=(Math.abs(a.x-inv.x)+Math.abs(a.y-inv.y))/sc;
+      const db=(Math.abs(b.x-inv.x)+Math.abs(b.y-inv.y))/sc;
+      const total=da+db+2*vOff;
+      setCableResult({da:da.toFixed(2),db:db.toFixed(2),vOff,total:total.toFixed(2)});
+    } else if(markedPts.length<2){
+      setCableResult(null);
+    }
+  },[markedPts, inverters, sc, vOff]);
+
+  // ── String kablo tablosu ──────────────────────────────────────
+  // Her string için kaydedilen ölçüm: {strId, label, da, db, total}
+  const [strCableTable,setStrCableTable]=useState([]);
+
+  const saveCurrentMeasure=()=>{
+    if(!cableResult||!markedPts.length)return;
+    // Mevcut aktif string blok seçimi: son eklenen veya kullanıcı seçimi
+    const label=`String ${strCableTable.length+1}`;
+    setStrCableTable(t=>[...t,{
+      id:Date.now(), label,
+      da:cableResult.da, db:cableResult.db,
+      vOff:cableResult.vOff, total:cableResult.total,
+    }]);
+    setMarkedPts([]);
+  };
+
+  const removeStrRow=(id)=>setStrCableTable(t=>t.filter(r=>r.id!==id));
+
+  // DC Dizi tanımına aktar
+  const exportToDC=()=>{
+    if(!strCableTable.length)return;
+    // strBlocks ile eşleştir
+    const dcLines=strCableTable.map((r,i)=>{
+      const blk=strBlocks[i];
+      return{
+        id:r.id, code:r.label,
+        nSeri:blk?blk.rows*blk.cols:12,
+        L:parseFloat(r.total),
+      };
+    });
+    // localStorage'a yaz — GesKablo bunu okuyacak
+    localStorage.setItem('catiDCLines',JSON.stringify(dcLines));
+    alert(`${dcLines.length} string DC Dizi Tanımları'na aktarıldı.\nGES Kablo modülünü açarak "Çatıdan Yükle" butonuna basın.`);
+  };
+
   // ── Mouse Move ────────────────────────────────────────────────
   const onMM=e=>{
     const pt=getSvgPt(e);
@@ -243,20 +292,9 @@ export default function CatiTasarim(){
     }
     if(mod==='cable'){
       const pt=getSvgPt(e);
-      setMarkedPts(prev=>{
-        const next=prev.length>=2?[{x:pt.x,y:pt.y}]:[...prev,{x:pt.x,y:pt.y}];
-        // Hesabı sonraki tick'te yap
-        if(next.length===2&&inverters.length>0){
-          const inv=inverters[0];
-          const a=next[0],b=next[1];
-          const da=(Math.abs(a.x-inv.x)+Math.abs(a.y-inv.y))/sc;
-          const db=(Math.abs(b.x-inv.x)+Math.abs(b.y-inv.y))/sc;
-          const total=da+db+2*vOff;
-          setTimeout(()=>setCableResult({da:da.toFixed(2),db:db.toFixed(2),vOff,total:total.toFixed(2)}),0);
-        } else if(next.length===1){
-          setTimeout(()=>setCableResult(null),0);
-        }
-        return next;
+      setMarkedPts(p=>{
+        if(p.length>=2) return [{x:pt.x,y:pt.y}]; // sıfırla, yeni A
+        return [...p,{x:pt.x,y:pt.y}];
       });
       return;
     }
@@ -434,18 +472,40 @@ export default function CatiTasarim(){
 
           {cableResult&&(
             <div className="bg-indigo-50 border-2 border-indigo-300 p-4 rounded-xl">
-              <div className="text-[10px] font-bold text-indigo-500 uppercase mb-2">🔌 DC Kablo Sonucu</div>
-              <div className="space-y-1 text-xs font-mono">
-                <div className="flex justify-between"><span className="text-indigo-700">A (ilk panel) → İnv</span><span className="font-bold">{cableResult.da} m</span></div>
-                <div className="flex justify-between"><span className="text-pink-700">B (son panel) → İnv</span><span className="font-bold">{cableResult.db} m</span></div>
-                {cableResult.vOff>0&&<div className="flex justify-between"><span className="text-slate-500">Dikey (×2)</span><span className="font-bold">{(cableResult.vOff*2).toFixed(1)} m</span></div>}
+              <div className="text-[10px] font-bold text-indigo-500 uppercase mb-2">🔌 Güncel Ölçüm</div>
+              <div className="space-y-1 text-xs font-mono mb-3">
+                <div className="flex justify-between"><span className="text-purple-700">A → İnverter</span><span className="font-bold">{cableResult.da} m</span></div>
+                <div className="flex justify-between"><span className="text-pink-700">B → İnverter</span><span className="font-bold">{cableResult.db} m</span></div>
+                {cableResult.vOff>0&&<div className="flex justify-between"><span className="text-slate-500">Dikey ×2</span><span className="font-bold">{(cableResult.vOff*2).toFixed(1)} m</span></div>}
                 <div className="border-t border-indigo-200 pt-1 mt-1 flex justify-between">
                   <span className="font-bold text-indigo-800">Toplam</span>
                   <span className="font-black text-indigo-800 text-sm">{cableResult.total} m</span>
                 </div>
               </div>
-              <button onClick={()=>{setMarkedPts([]);setCableResult(null);}}
-                className="w-full mt-2 text-[10px] text-indigo-400 hover:text-indigo-600 font-bold">Temizle</button>
+              <button onClick={saveCurrentMeasure}
+                className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-black py-2 rounded-lg text-xs transition-all">
+                + Tabloya Kaydet
+              </button>
+            </div>
+          )}
+
+          {strCableTable.length>0&&(
+            <div className="bg-white border rounded-xl p-3">
+              <div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Kablo Tablosu</div>
+              <div className="space-y-1 text-xs">
+                {strCableTable.map(r=>(
+                  <div key={r.id} className="flex items-center gap-2 bg-slate-50 rounded-lg px-2 py-1.5">
+                    <input value={r.label} onChange={e=>setStrCableTable(t=>t.map(x=>x.id===r.id?{...x,label:e.target.value}:x))}
+                      className="flex-1 bg-transparent font-bold text-slate-700 outline-none text-xs min-w-0"/>
+                    <span className="font-mono font-black text-indigo-700 whitespace-nowrap">{r.total} m</span>
+                    <button onClick={()=>removeStrRow(r.id)} className="text-red-400 hover:text-red-600 font-bold flex-shrink-0">✕</button>
+                  </div>
+                ))}
+              </div>
+              <button onClick={exportToDC}
+                className="w-full mt-2 bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2 rounded-lg text-xs transition-all">
+                ⚡ DC Dizi Tanımlarına Aktar
+              </button>
             </div>
           )}
 
