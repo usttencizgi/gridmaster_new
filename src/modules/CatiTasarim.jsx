@@ -185,19 +185,47 @@ export default function CatiTasarim(){
   const blkW=s=>s.cols*panW*sc+(s.cols-1)*cg*sc;
   const blkH=s=>s.rows*panH*sc+(s.rows-1)*rg*sc;
 
-  // Kablo hesabı — useEffect ile (setState inside setState olmaz)
+  // Waypoint state — her ölçüm için ayrı güzergah noktaları
+  const [waypoints,setWaypoints]=useState([]); // [{x,y}] — A ve B arası değil, A→inv ve B→inv güzergahları
+  const [wpMode,setWpMode]=useState(null); // null | 'a' | 'b' — hangi kablo güzergahı çiziliyor
+
+  // Kablo hesabı — waypoint varsa waypoint üzerinden, yoksa Manhattan
   useEffect(()=>{
-    if(markedPts.length===2&&inverters.length>0){
-      const inv=inverters[0];
+    if(markedPts.length===2){
       const a=markedPts[0],b=markedPts[1];
-      const da=(Math.abs(a.x-inv.x)+Math.abs(a.y-inv.y))/sc;
-      const db=(Math.abs(b.x-inv.x)+Math.abs(b.y-inv.y))/sc;
+      let da,db;
+      if(inverters.length>0){
+        const inv=inverters[0];
+        // Waypoint varsa waypoint üzerinden mesafe
+        const aWps=waypoints.filter(w=>w.side==='a');
+        const bWps=waypoints.filter(w=>w.side==='b');
+        if(aWps.length>0){
+          const chain=[a,...aWps,inv];
+          da=chain.reduce((s,p,i)=>i===0?0:s+dist(chain[i-1].x,chain[i-1].y,p.x,p.y),0)/sc;
+        } else {
+          da=(Math.abs(a.x-inv.x)+Math.abs(a.y-inv.y))/sc;
+        }
+        if(bWps.length>0){
+          const chain=[b,...bWps,inv];
+          db=chain.reduce((s,p,i)=>i===0?0:s+dist(chain[i-1].x,chain[i-1].y,p.x,p.y),0)/sc;
+        } else {
+          db=(Math.abs(b.x-inv.x)+Math.abs(b.y-inv.y))/sc;
+        }
+      } else {
+        da=0;db=0;
+      }
       const total=da+db+2*vOff;
-      setCableResult({da:da.toFixed(2),db:db.toFixed(2),vOff,total:total.toFixed(2)});
+      setCableResult({
+        da:da.toFixed(2),
+        db:db.toFixed(2),
+        vOff,
+        total:total.toFixed(2),
+        halfL:(total/2).toFixed(2),
+      });
     } else {
       setCableResult(null);
     }
-  },[markedPts,inverters,sc,vOff]);
+  },[markedPts,waypoints,inverters,sc,vOff]);
 
   // SVG koordinat (doğru — createSVGPoint kullanır)
   const getSpt=useCallback(e=>{
@@ -289,7 +317,17 @@ export default function CatiTasarim(){
       setRulerCur(null);return;
     }
     if(mod==='cable'){
-      setMarkedPts(p=>p.length>=2?[{x:pt.x,y:pt.y}]:[...p,{x:pt.x,y:pt.y}]);
+      const pt=getSpt(e);
+      if(wpMode){
+        // Güzergah noktası ekle
+        setWaypoints(w=>[...w,{x:pt.x,y:pt.y,side:wpMode}]);
+        return;
+      }
+      // A veya B noktası
+      setMarkedPts(p=>{
+        if(p.length>=2){setWaypoints([]);return[{x:pt.x,y:pt.y}];}
+        return[...p,{x:pt.x,y:pt.y}];
+      });
       setRulerCur(null);return;
     }
     if(mod!=='draw')return;
@@ -310,8 +348,8 @@ export default function CatiTasarim(){
   const saveMeasure=()=>{
     if(!cableResult)return;
     const label=`String ${cableTable.length+1}`;
-    setCableTable(t=>[...t,{id:Date.now(),label,da:cableResult.da,db:cableResult.db,vOff:cableResult.vOff,total:cableResult.total}]);
-    setMarkedPts([]);
+    setCableTable(t=>[...t,{id:Date.now(),label,da:cableResult.da,db:cableResult.db,vOff:cableResult.vOff,total:cableResult.total,halfL:cableResult.halfL}]);
+    setMarkedPts([]);setWaypoints([]);setWpMode(null);
   };
 
   const exportDC=()=>{
@@ -391,7 +429,7 @@ export default function CatiTasarim(){
               {mod==='edit'   &&'Köşe sürükle · Kenar ortasına tıkla→yeni köşe · Blok/Engel sürükle→taşı'}
               {mod==='inverter'&&'Canvas\'a tıkla → inverter ekle (✕ ile sil)'}
               {mod==='ruler'  &&'1.tıkla→A · 2.tıkla→B → Manhattan + kuş uçuşu mesafe'}
-              {mod==='cable'  &&'1.tıkla→ilk panel (A) · 2.tıkla→son panel (B) → invertere mesafe hesabı'}
+              {mod==='cable'  &&(wpMode?<><b>{wpMode==='a'?'A':'B'} güzergahı:</b> Canvas'a tıkla → nokta ekle · Tekrar sol panelden güzergah butonuna bas → bitir</>:<>1.tıkla→A (ilk panel) · 2.tıkla→B (son panel) → sonra güzergah ekleyebilirsin</>)}
               {mod==='view'   &&'String bağlantı hatlarını gör'}
             </div>
           </div>
@@ -479,10 +517,36 @@ export default function CatiTasarim(){
                 <div className="flex justify-between"><span className="text-pink-700">B → İnverter</span><span className="font-bold">{cableResult.db} m</span></div>
                 {vOff>0&&<div className="flex justify-between"><span className="text-slate-500">Dikey ×2</span><span className="font-bold">{(vOff*2).toFixed(1)} m</span></div>}
                 <div className="border-t border-indigo-200 pt-1 mt-1 flex justify-between">
-                  <span className="font-bold text-indigo-800">Toplam</span>
+                  <span className="font-bold text-indigo-800">Keşif Toplamı</span>
                   <span className="font-black text-indigo-800 text-sm">{cableResult.total} m</span>
                 </div>
+                <div className="flex justify-between bg-amber-50 rounded-lg px-2 py-1">
+                  <span className="font-bold text-amber-700">Hesap için (÷2)</span>
+                  <span className="font-black text-amber-700 text-sm">{cableResult.halfL} m</span>
+                </div>
               </div>
+              {/* Güzergah çizimi */}
+              {markedPts.length===2&&inverters.length>0&&(
+                <div className="mb-3 space-y-1.5">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase">Güzergah Ekle (opsiyonel)</div>
+                  <div className="flex gap-2">
+                    <button onClick={()=>setWpMode(wpMode==='a'?null:'a')}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${wpMode==='a'?'bg-purple-100 border-purple-500 text-purple-700':'border-slate-200 text-slate-500'}`}>
+                      {wpMode==='a'?'● ':''}A güzergahı
+                    </button>
+                    <button onClick={()=>setWpMode(wpMode==='b'?null:'b')}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border-2 transition-all ${wpMode==='b'?'bg-pink-100 border-pink-500 text-pink-700':'border-slate-200 text-slate-500'}`}>
+                      {wpMode==='b'?'● ':''}B güzergahı
+                    </button>
+                  </div>
+                  {waypoints.length>0&&(
+                    <button onClick={()=>setWaypoints([])}
+                      className="w-full text-[10px] text-red-400 hover:text-red-600 font-bold">
+                      Güzergahı Temizle ({waypoints.length} nokta)
+                    </button>
+                  )}
+                </div>
+              )}
               <button onClick={saveMeasure}
                 className="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-black py-2 rounded-lg text-xs">
                 + Tabloya Kaydet
@@ -500,21 +564,33 @@ export default function CatiTasarim(){
                     <input value={r.label}
                       onChange={e=>setCableTable(t=>t.map(x=>x.id===r.id?{...x,label:e.target.value}:x))}
                       className="flex-1 bg-transparent font-bold text-slate-700 outline-none text-xs min-w-0"/>
-                    <span className="font-mono font-black text-indigo-700 whitespace-nowrap">{r.total} m</span>
+                    <span className="font-mono text-indigo-700 whitespace-nowrap">{r.total}m</span>
+                    <span className="font-mono font-black text-amber-700 whitespace-nowrap">{r.halfL}m</span>
                     <button onClick={()=>setCableTable(t=>t.filter(x=>x.id!==r.id))}
                       className="text-red-400 hover:text-red-600 font-bold flex-shrink-0">✕</button>
                   </div>
                 ))}
+                <div className="flex justify-between text-[10px] text-slate-400 px-2 pb-1">
+                  <span>keşif (toplam)</span><span>hesap (÷2)</span>
+                </div>
               </div>
               {/* Toplam */}
-              <div className="mt-2 border-t border-slate-200 pt-2 flex items-center justify-between px-2">
-                <span className="text-xs font-black text-slate-700">Toplam ({cableTable.length} string)</span>
-                <span className="font-black font-mono text-emerald-700 text-sm">
-                  {cableTable.reduce((s,r)=>s+parseFloat(r.total),0).toFixed(2)} m
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-400 text-right px-2 mb-2">
-                ×2 (+ / −) = {(cableTable.reduce((s,r)=>s+parseFloat(r.total),0)*2).toFixed(2)} m toplam kablo
+              <div className="mt-2 border-t border-slate-200 pt-2 px-2 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-slate-700">Keşif Toplamı ({cableTable.length} string)</span>
+                  <span className="font-black font-mono text-indigo-700 text-sm">
+                    {cableTable.reduce((s,r)=>s+parseFloat(r.total),0).toFixed(2)} m
+                  </span>
+                </div>
+                <div className="flex items-center justify-between bg-amber-50 rounded-lg px-2 py-1.5">
+                  <span className="text-xs font-black text-amber-700">Hesap Toplamı (÷2)</span>
+                  <span className="font-black font-mono text-amber-700 text-sm">
+                    {(cableTable.reduce((s,r)=>s+parseFloat(r.total),0)/2).toFixed(2)} m
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400 text-right">
+                  ×2 (pos+neg) = {cableTable.reduce((s,r)=>s+parseFloat(r.total),0).toFixed(2)} m fiziksel kablo
+                </div>
               </div>
               <button onClick={exportDC}
                 className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-black py-2 rounded-lg text-xs">
@@ -677,6 +753,29 @@ export default function CatiTasarim(){
                   <text x={mx} y={my-10} textAnchor="middle" fontSize="9" fontWeight="bold" fill="white">📏 {mn}m (köşeli)</text>
                   <text x={mx} y={my+3} textAnchor="middle" fontSize="8" fill="white" opacity="0.85">kuş uçuşu: {st}m</text>
                 </g>);
+              })()}
+
+              {/* Kablo güzergah waypoint'leri */}
+              {markedPts.length>=1&&waypoints.length>0&&(()=>{
+                const inv=inverters[0];
+                const aWps=waypoints.filter(w=>w.side==='a');
+                const bWps=waypoints.filter(w=>w.side==='b');
+                return(<>
+                  {aWps.length>0&&markedPts[0]&&inv&&(()=>{
+                    const chain=[markedPts[0],...aWps,inv];
+                    const pts=chain.map(p=>`${p.x},${p.y}`).join(' ');
+                    return<polyline points={pts} fill="none" stroke="#7c3aed" strokeWidth="2" strokeDasharray="none" opacity="0.8"/>;
+                  })()}
+                  {bWps.length>0&&markedPts[1]&&inv&&(()=>{
+                    const chain=[markedPts[1],...bWps,inv];
+                    const pts=chain.map(p=>`${p.x},${p.y}`).join(' ');
+                    return<polyline points={pts} fill="none" stroke="#db2777" strokeWidth="2" strokeDasharray="none" opacity="0.8"/>;
+                  })()}
+                  {waypoints.map((w,i)=>(
+                    <circle key={i} cx={w.x} cy={w.y} r={5}
+                      fill={w.side==='a'?'#7c3aed':'#db2777'} stroke="white" strokeWidth="1.5"/>
+                  ))}
+                </>);
               })()}
 
               {/* Kablo ölçüm noktaları */}
