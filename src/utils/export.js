@@ -1540,24 +1540,78 @@ export function exportGesTopraklamaPDF(inputs, res) {
           res.Res, '≤', sinir, 'Ω',
           'Reş='+f(res.Res,3)+'Ω ≤ 50/'+f(Id,3)+'='+f(sinir,2)+'Ω')
 
-      // Bölüm 3 — PE Kesit
-      + '<div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#0c4a6e;border-bottom:2px solid #0c4a6e;padding-bottom:4px">3.  PE İLETKENİ MİNİMUM KESİTİ (IEC 60364-7-712)</div>'
-      + '<div style="font-size:10px;color:#475569;margin-bottom:8px">'
-      + 'AG/TT tesisinde OG gibi S=I×√t/k hesabı yapılmaz. Arıza akımı RCD ile ms içinde kesilir. '
-      + 'IEC 60364-7-712 md.712.54.1 asgari değerleri geçerlidir.'
+      // Bölüm 3 — PE Kesit (hesaplanan değerler)
+      const fazMm2    = res.fazKesit || inputs.fazKesit || 16;
+      const peCu      = res.peCu || (fazMm2<=16?fazMm2:fazMm2<=35?16:Math.ceil(fazMm2/2));
+      const toprakCu  = Math.max(peCu, 16);   // IEC 60364-5-54 md.542.3.1
+      const toprakGS  = 50;                   // galvaniz şerit min. mm²
+      const esPotan   = Math.max(peCu, 6);    // eşpotansiyel şerit
+      const peKural   = fazMm2<=16 ? 'Faz ≤ 16mm² → PE = Faz' : fazMm2<=35 ? '16mm² < Faz ≤ 35mm² → PE = 16mm²' : 'Faz > 35mm² → PE = Faz/2';
+
+      body += ''
+      + '<div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#0c4a6e;border-bottom:2px solid #0c4a6e;padding-bottom:4px">3.  PE VE TOPRAKLAMA İLETKENİ KESİT SEÇİMİ</div>'
+      + '<div style="font-size:10px;color:#475569;margin-bottom:8px;background:#f0f9ff;padding:8px;border-radius:6px;font-family:monospace">'
+      + 'IEC 60364-5-54 Tablo 54.2 — PE İletken Kesiti:<br>'
+      + 'Faz = '+fazMm2+' mm²  →  '+peKural+'  →  <b>PE = '+peCu+' mm² Cu</b>'
       + '</div>'
-      + '<table><thead><tr><th>İletken / Kullanım</th><th>Min. Kesit</th><th>Standart</th></tr></thead><tbody>'
-      + '<tr style="background:#d1fae5"><td><b>PE / Koruma İletkeni</b></td><td class="mono"><b>4 mm² Cu (min.)</b></td><td>IEC 60364-7-712 md.712.54.1</td></tr>'
-      + '<tr><td>Eşpotansiyel Bağlantı Şeridi</td><td class="mono"><b>6 mm² Cu</b></td><td>IEC 60364-5-54 md.543.3</td></tr>'
-      + '<tr><td>Topraklama Elektrodu İletkeni</td><td class="mono"><b>50 mm² galvaniz şerit</b></td><td>TS EN 50522 min. şerit kesiti</td></tr>'
-      + '<tr><td>Çatı Panel Çerçeve Bağlantısı</td><td class="mono"><b>4 mm² Cu</b></td><td>IEC 60364-7-712 md.712.412.1.1</td></tr>'
-      + '</tbody></table>'
+      + '<table><thead><tr><th>İletken / Kullanım</th><th>Hesaplanan / Min. Kesit</th><th>Malzeme</th><th>Standart</th></tr></thead><tbody>'
+      + '<tr style="background:#d1fae5"><td><b>PE / Koruma İletkeni</b></td>'
+      + '<td class="mono" style="font-weight:700;font-size:12px">'+peCu+' mm²</td>'
+      + '<td>Bakır (Cu)</td><td>IEC 60364-5-54 Tablo 54.2</td></tr>'
+      + '<tr><td>Eşpotansiyel Bağlantı Şeridi</td>'
+      + '<td class="mono" style="font-weight:700">'+esPotan+' mm²</td>'
+      + '<td>Bakır (Cu)</td><td>IEC 60364-5-54 md.543.3</td></tr>'
+      + '<tr><td>Topraklama Elektrodu İletkeni (korumalı)</td>'
+      + '<td class="mono" style="font-weight:700">'+toprakCu+' mm² Cu  /  '+toprakGS+' mm² galv.</td>'
+      + '<td>Cu veya Galvaniz Çelik</td><td>IEC 60364-5-54 md.542.3.1</td></tr>'
+      + '<tr><td>Topraklama Elektrodu İletkeni (korumasız)</td>'
+      + '<td class="mono" style="font-weight:700">'+Math.max(toprakCu,25)+' mm² Cu  /  '+toprakGS+' mm² galv.</td>'
+      + '<td>Cu veya Galvaniz Çelik</td><td>IEC 60364-5-54 md.542.3.2</td></tr>'
+      + '<tr><td>Panel Çerçeve Eşpotansiyel Bağlantısı</td>'
+      + '<td class="mono" style="font-weight:700">'+Math.max(peCu,4)+' mm²</td>'
+      + '<td>Bakır (Cu)</td><td>IEC 60364-7-712 md.712.412.1.1</td></tr>'
+      + '</tbody></table>';
+
+      // Bölüm 4 — OG Trafo varsa OG hesabı
+      if (res.ogPart) {
+        const og = res.ogPart;
+        const utpSvgOg = makeUtpSvg(og.t, og.Utp, og.UE, og.dok_ok);
+        const gSvgOg   = makeGSvg(og.t, og.Ik1A);
+        const rLabels  = ['Sadece havai hat (r=0.60)','Karma havai+yer altı (r=0.45)','Sadece yer altı kablo (r=0.30)'];
+        body += ''
+        + '<div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#5b21b6;border-bottom:2px solid #5b21b6;padding-bottom:4px">4.  OG TRAFO MERKEZİ TOPRAKLAMA KONTROLÜ (Opsiyonel)</div>'
+        + '<div style="padding:8px 12px;background:#f5f3ff;border:1px solid #c4b5fd;border-radius:8px;font-size:9px;margin-bottom:8px">'
+        + 'Bina kendi trafo merkezine sahip olduğu için OG taraf topraklama kontrolü de yapılmıştır.<br>'
+        + '<b>Bina mevcut toprağı (Reş = '+f(res.Res,3)+' Ω) aynı zamanda OG taraf için kullanılmıştır.</b>'
+        + '</div>'
+        + '<table><thead><tr><th>Parametre</th><th>Değer</th><th>Açıklama</th></tr></thead><tbody>'
+        + '<tr><td>I"k1 (OG faz-toprak)</td><td class="mono"><b>'+f(og.Ik1,3)+' kA = '+og.Ik1A.toFixed(0)+' A</b></td><td>Trafo merkezi kısa devre değeri</td></tr>'
+        + '<tr><td>Bölünme katsayısı r</td><td class="mono"><b>'+og.r+'</b></td><td>'+rLabels[inputs.cRIdx||2]+'</td></tr>'
+        + '<tr><td>Arıza süresi t</td><td class="mono"><b>'+og.t+' s</b></td><td>OG koruma rölesi gecikmesi</td></tr>'
+        + '<tr><td>UTP (t='+og.t+'s)</td><td class="mono"><b>'+og.Utp+' V</b></td><td>ETT Yönetmeliği UTP tablosu</td></tr>'
+        + '<tr style="background:#ede9fe"><td>It = r × I"k1</td><td class="mono"><b>'+f(og.It,1)+' A</b></td><td>Topraktan geçen arıza akımı</td></tr>'
+        + '<tr style="background:#ede9fe"><td>UE = Reş × It</td><td class="mono"><b>'+f(og.UE,2)+' V</b></td><td>OG dokunma gerilimi</td></tr>'
+        + '</tbody></table>'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px">'
+        + '<div>'
+        + okBox(og.dok_ok,'OG Dokunma Gerilimi — UE < UTP(t)',og.UE,'<',og.Utp,'V','UE='+f(og.UE,2)+'V '+(og.dok_ok?'<':'>')+'UTP('+og.t+'s)='+og.Utp+'V')
+        + okBox(og.rcd_ok,'OG RCD Kontrolü — Reş ≤ 50/(n×0.3)',res.Res,'≤',50/((inputs.nInvAG||8)*0.3),'Ω','')
+        + '<div style="background:#fef9c3;border:2px solid #eab308;border-radius:8px;padding:10px;text-align:center;margin-top:8px">'
+        + '<div style="font-size:9px;font-weight:700;color:#92400e">OG Topraklama İletkeni (S=I×√t/k)</div>'
+        + '<div style="font-size:24px;font-weight:900;font-family:monospace;color:#92400e">'+og.qS+' mm²</div>'
+        + '<div style="font-size:9px;color:#64748b">k=115 A/mm² | ETT min. 50mm² galvaniz şerit</div>'
+        + '</div>'
+        + '</div>'
+        + '<div>'+utpSvgOg+'<div style="margin-top:8px">'+gSvgOg+'</div></div>'
+        + '</div>';
+      }
 
       // Özet
-      + '<div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#0c4a6e;border-bottom:2px solid #0c4a6e;padding-bottom:4px">4.  ÖZET SONUÇLAR</div>'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">'
+      body += ''
+      + '<div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#0c4a6e;border-bottom:2px solid #0c4a6e;padding-bottom:4px">'+(res.ogPart?'5':'4')+'.  ÖZET SONUÇLAR</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr '+(res.ogPart?'1fr':'')+';gap:10px">'
       + '<div style="background:'+(res.dok_ok?'#f0fdf4':'#fef2f2')+';border:2px solid '+(res.dok_ok?'#16a34a':'#dc2626')+';border-radius:8px;padding:12px;text-align:center">'
-      + '<div style="font-size:9px;font-weight:700;color:'+(res.dok_ok?'#166534':'#991b1b')+';text-transform:uppercase;margin-bottom:4px">Dokunma Gerilimi UE</div>'
+      + '<div style="font-size:9px;font-weight:700;color:'+(res.dok_ok?'#166534':'#991b1b')+';text-transform:uppercase;margin-bottom:4px">Dokunma Gerilimi</div>'
       + '<div style="font-size:22px;font-weight:900;font-family:monospace;color:'+(res.dok_ok?'#15803d':'#dc2626')+'">'+f(ue_val,1)+' V</div>'
       + '<div style="font-size:9px;color:#64748b">Sınır: 50 V (TT sabit)</div>'
       + '</div>'
@@ -1566,11 +1620,18 @@ export function exportGesTopraklamaPDF(inputs, res) {
       + '<div style="font-size:22px;font-weight:900;font-family:monospace;color:'+(res.rcd_ok?'#15803d':'#dc2626')+'">'+f(res.Res,3)+' Ω</div>'
       + '<div style="font-size:9px;color:#64748b">Sınır: '+f(sinir,2)+' Ω</div>'
       + '</div>'
-      + '<div style="background:#eff6ff;border:2px solid #2563eb;border-radius:8px;padding:12px;text-align:center">'
-      + '<div style="font-size:9px;font-weight:700;color:#1e40af;text-transform:uppercase;margin-bottom:4px">Toplam Kaçak Akım Id</div>'
-      + '<div style="font-size:22px;font-weight:900;font-family:monospace;color:#1e40af">'+f(Id,3)+' A</div>'
-      + '<div style="font-size:9px;color:#64748b">'+(inputs.nInvAG||8)+'×'+(inputs.iDn||0.3)+'A</div>'
+      + '<div style="background:#fef9c3;border:2px solid #eab308;border-radius:8px;padding:12px;text-align:center">'
+      + '<div style="font-size:9px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:4px">PE İletkeni</div>'
+      + '<div style="font-size:22px;font-weight:900;font-family:monospace;color:#92400e">'+peCu+' mm²</div>'
+      + '<div style="font-size:9px;color:#64748b">IEC 60364-5-54 T.54.2</div>'
       + '</div>'
+      + (res.ogPart
+          ? '<div style="background:'+(res.ogPart.dok_ok?'#f5f3ff':'#fef2f2')+';border:2px solid '+(res.ogPart.dok_ok?'#7c3aed':'#dc2626')+';border-radius:8px;padding:12px;text-align:center">'
+          + '<div style="font-size:9px;font-weight:700;color:'+(res.ogPart.dok_ok?'#5b21b6':'#991b1b')+';text-transform:uppercase;margin-bottom:4px">OG Topraklama</div>'
+          + '<div style="font-size:22px;font-weight:900;font-family:monospace;color:'+(res.ogPart.dok_ok?'#5b21b6':'#dc2626')+'">'+(res.ogPart.dok_ok?'✓':'✗')+'</div>'
+          + '<div style="font-size:9px;color:#64748b">UE='+f(res.ogPart.UE,1)+'V / UTP='+res.ogPart.Utp+'V</div>'
+          + '</div>'
+          : '')
       + '</div>';
   }
 

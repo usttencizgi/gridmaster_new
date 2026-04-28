@@ -228,12 +228,41 @@ export default function GesTopraklama({initialIk1=0}){
   const updKosk=(i,k,v)=>setKoskler(ks=>ks.map((ko,j)=>j===i?{...ko,[k]:v}:ko));
 
   // AG (Çatı/TT) state
-  const [iDn,setIDn]=useState(.3);         // RCD anma akımı A
-  const [nInvAG,setNInvAG]=useState(8);    // evirici sayısı
-  const [Rmev,setRmev]=useState(5.0);      // mevcut bina toprağı Ω
+  const [iDn,setIDn]=useState(.3);
+  const [nInvAG,setNInvAG]=useState(8);
+  const [Rmev,setRmev]=useState(5.0);
   const [cKazik,setCKazik]=useState({aktif:false,n:4,Lc:1.5,dc:.05});
+  // Faz iletken kesiti (AG PE hesabı için)
+  const [fazKesit,setFazKesit]=useState(16); // mm²
+
+  // Çatı + OG trafo opsiyonel
+  const [hasTrafomer,setHasTrafomer]=useState(false);
+  const [cIk1,setCIk1]=useState(0.5);   // kA
+  const [cRIdx,setCRIdx]=useState(2);
+  const [cT,setCT]=useState(1.0);
 
   const [res,setRes]=useState(null);
+
+  // PE iletken kesiti — IEC 60364-5-54 Tablo 54.2
+  // Faz ≤16mm² → PE=faz | 16<faz≤35 → PE=16 | faz>35 → PE=faz/2
+  // Topraklama elektrodu iletkeni: koruma altında min 16mm² Cu / 50mm² galv. çelik
+  function calcPEKesit(fazMm2) {
+    let pe;
+    if (fazMm2 <= 16) pe = fazMm2;
+    else if (fazMm2 <= 35) pe = 16;
+    else pe = Math.ceil(fazMm2 / 2);
+    const STD = [1.5,2.5,4,6,10,16,25,35,50,70,95,120,150,185,240,300];
+    pe = STD.find(s => s >= pe) || 300;
+    return pe;
+  }
+  // Topraklama elektrodu iletkeni (gömülü / koruma altı)
+  function calcTopraklamaKesit(fazMm2) {
+    // IEC 60364-5-54 md.542.3.1
+    // Korunmuş: min 16mm² Cu veya 50mm² galv. çelik
+    // Korunmamış: min 25mm² Cu veya 50mm² galv. çelik
+    const pe = calcPEKesit(fazMm2);
+    return { cu: Math.max(pe, 16), gSteel: 50 };
+  }
 
   const hesapla=()=>{
     if(mod==='arazi'){
@@ -287,9 +316,34 @@ export default function GesTopraklama({initialIk1=0}){
       const dok_ok=UE<=50;        // UE ≤ 50V
       const rcd_ok=Res<=sinir;    // Reş ≤ 50/Id
 
-      setRes({mod:'cati',Res,Rc,Id,UE,sinir,nInvAG,iDn,
-        dok_ok,rcd_ok,
-        qS:4,qH:0}); // AG min 4mm² (IEC 60364-7-712)
+      // İletken kesit (IEC 60364-5-54)
+      const peCu   = calcPEKesit(fazKesit);
+      const toprak = calcTopraklamaKesit(fazKesit);
+
+      // Opsiyonel OG bölümü (bina kendi trafosuna sahipse)
+      let ogPart = null;
+      if (hasTrafomer) {
+        const Ik1A_og = cIk1 * 1000;
+        const Utp_og  = getUtp(cT);
+        const r_og    = R_SEL[cRIdx].r;
+        const It_og   = r_og * Ik1A_og;
+        const UE_og   = Res * It_og;
+        const qH_og   = Ik1A_og * Math.sqrt(cT) / 115;
+        const qS_og   = [10,16,25,35,50,70,95,120,150,185].find(s=>s>=qH_og)||185;
+        ogPart = {
+          Ik1: cIk1, Ik1A: Ik1A_og, rIdx: cRIdx, t: cT,
+          r: r_og, It: It_og, UE: UE_og, Utp: Utp_og,
+          dok_ok: UE_og < Utp_og,
+          rcd_ok: Res <= 50/(nInvAG*0.3),
+          qH: qH_og, qS: qS_og,
+        };
+      }
+
+      setRes({mod:'cati', Res, Rc, Id, UE, sinir, nInvAG, iDn,
+        dok_ok, rcd_ok,
+        peCu, toprak, fazKesit,
+        qS: peCu, qH: 0,
+        ogPart});
     }
   };
 
@@ -322,11 +376,11 @@ export default function GesTopraklama({initialIk1=0}){
           </button>
           {res&&(
             <>
-              <button onClick={()=>exportGesTopraklamaPDF({mod,Ik1,rIdx,rho,t,nInv,nInvAG,iDn,saha,koskler,Rmev,cKazik},res)}
+              <button onClick={()=>exportGesTopraklamaPDF({mod,Ik1,rIdx,rho,t,nInv,nInvAG,iDn,saha,koskler,Rmev,cKazik,fazKesit,hasTrafomer,cIk1,cRIdx,cT},res)}
                 className="bg-white/20 hover:bg-white/30 text-white font-bold py-2.5 px-4 rounded-xl text-sm">
                 🖨 PDF
               </button>
-              <button onClick={()=>exportGesTopraklamaWord({mod,Ik1,rIdx,rho,t,nInv,nInvAG,iDn,saha,koskler,Rmev,cKazik},res)}
+              <button onClick={()=>exportGesTopraklamaWord({mod,Ik1,rIdx,rho,t,nInv,nInvAG,iDn,saha,koskler,Rmev,cKazik,fazKesit,hasTrafomer,cIk1,cRIdx,cT},res)}
                 className="bg-white/20 hover:bg-white/30 text-white font-bold py-2.5 px-4 rounded-xl text-sm">
                 📄 Word
               </button>
@@ -467,6 +521,80 @@ export default function GesTopraklama({initialIk1=0}){
                 Reş sınırı = 50 / {(nInvAG*iDn).toFixed(3)} = {(50/(nInvAG*iDn)).toFixed(2)} Ω
               </div>
               <NI label="Mevcut Bina Toprağı R_mev [Ω]" value={Rmev} onChange={setRmev} unit="Ω" step={.5} min={.01}/>
+
+              {/* Faz iletken kesiti */}
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1.5">Faz İletken Kesiti (PE hesabı için)</label>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[6,10,16,25,35,50,70,95].map(k=>(
+                    <button key={k} onClick={()=>setFazKesit(k)}
+                      className={`py-2 rounded-lg text-xs font-bold border-2 transition-all ${fazKesit===k?'bg-amber-50 border-amber-500 text-amber-700':'border-slate-200 text-slate-500'}`}>
+                      {k}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1.5 font-mono bg-amber-50 rounded-lg px-3 py-1.5">
+                  {fazKesit<=16?`PE = ${fazKesit} mm² Cu (faz=PE ≤16mm²)`:
+                   fazKesit<=35?`PE = 16 mm² Cu (16<faz≤35mm²)`:
+                   `PE = ${Math.ceil(fazKesit/2)} mm² Cu (PE=faz/2 >35mm²)`}
+                  &nbsp;|&nbsp; Topraklama elektrodu: min. 16mm² Cu / 50mm² galv. çelik
+                </div>
+              </div>
+
+              <div>
+                <button onClick={()=>setCKazik(p=>({...p,aktif:!p.aktif}))}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 mb-2 transition-all ${cKazik.aktif?'bg-amber-50 border-amber-400 text-amber-700':'border-slate-200 text-slate-400 bg-white'}`}>
+                  İlave Topraklama Kazığı {cKazik.aktif?'✓':'○'}
+                </button>
+                {cKazik.aktif&&(
+                  <div className="grid grid-cols-3 gap-2">
+                    <NI label="n [adet]" value={cKazik.n} onChange={v=>setCKazik(p=>({...p,n:v}))} unit="adet" step={1} min={1}/>
+                    <NI label="Lç [m]" value={cKazik.Lc} onChange={v=>setCKazik(p=>({...p,Lc:v}))} unit="m" step={.5} min={.5}/>
+                    <NI label="dç [m]" value={cKazik.dc} onChange={v=>setCKazik(p=>({...p,dc:v}))} unit="m" step={.005} min={.01}/>
+                  </div>
+                )}
+              </div>
+
+              {/* OG Trafo var mı? */}
+              <div className="border-t border-slate-100 pt-3">
+                <button onClick={()=>setHasTrafomer(p=>!p)}
+                  className={`w-full px-4 py-3 rounded-xl border-2 text-xs font-bold transition-all text-left ${hasTrafomer?'bg-violet-50 border-violet-500 text-violet-700':'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+                  <div className="flex items-center justify-between">
+                    <span>⚡ Tesiste OG Trafo Var (Bina Trafo Merkezi)</span>
+                    <span>{hasTrafomer?'✓':'○'}</span>
+                  </div>
+                  {hasTrafomer&&<div className="text-[10px] text-violet-500 mt-1">OG topraklama hesabı da rapora eklenecek</div>}
+                </button>
+                {hasTrafomer&&(
+                  <div className="mt-3 space-y-3 bg-violet-50 border border-violet-200 rounded-xl p-3">
+                    <div className="text-[10px] font-bold text-violet-600 uppercase">OG Trafo Merkezi Parametreleri</div>
+                    <NI label='I"k1 OG faz-toprak [kA]' value={cIk1} onChange={setCIk1} unit="kA" step={.01} min={.01}/>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Bölünme Katsayısı r</label>
+                      <div className="space-y-1">
+                        {R_SEL.map((s,i)=>(
+                          <button key={i} onClick={()=>setCRIdx(i)}
+                            className={`w-full text-left px-3 py-2 rounded-lg border-2 text-xs transition-all ${cRIdx===i?'bg-violet-50 border-violet-500 text-violet-700':'border-slate-200 text-slate-500'}`}>
+                            <div className="flex justify-between"><span>{s.label}</span><span className="font-mono font-bold">r={s.r}</span></div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Arıza Süresi</label>
+                      <div className="flex gap-2">
+                        {[.5,1.0].map(tv=>(
+                          <button key={tv} onClick={()=>setCT(tv)}
+                            className={`flex-1 py-2 rounded-lg border-2 font-bold text-sm transition-all ${cT===tv?'bg-violet-50 border-violet-500 text-violet-700':'border-slate-200 text-slate-500'}`}>
+                            {tv} s
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <button onClick={()=>setCKazik(p=>({...p,aktif:!p.aktif}))}
                   className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 mb-2 transition-all ${cKazik.aktif?'bg-amber-50 border-amber-400 text-amber-700':'border-slate-200 text-slate-400 bg-white'}`}>
