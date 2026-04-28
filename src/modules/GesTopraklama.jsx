@@ -436,16 +436,28 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
             HESAPLA
           </button>
           {res && (
-            <button onClick={async () => {
-              const { exportGesTopraklamaWord } = await import('../utils/export.js');
-              exportGesTopraklamaWord(
-                { mod, Ik1, rIdx, rhoE, t, nInv, saha, koskler, Rmevcut, catiSerit, catiKazik },
-                res
-              );
-            }}
-              className="bg-white/20 hover:bg-white/30 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all">
-              📄 Word
-            </button>
+            <div className="flex gap-2">
+              <button onClick={async () => {
+                const { exportGesTopraklamaPDF } = await import('../utils/export.js');
+                exportGesTopraklamaPDF(
+                  { mod, Ik1, rIdx, rhoE, t, nInv, saha, koskler, Rmevcut, catiSerit, catiKazik },
+                  res
+                );
+              }}
+                className="bg-white/20 hover:bg-white/30 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all">
+                🖨 PDF
+              </button>
+              <button onClick={async () => {
+                const { exportGesTopraklamaWord } = await import('../utils/export.js');
+                exportGesTopraklamaWord(
+                  { mod, Ik1, rIdx, rhoE, t, nInv, saha, koskler, Rmevcut, catiSerit, catiKazik },
+                  res
+                );
+              }}
+                className="bg-white/20 hover:bg-white/30 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all">
+                📄 Word
+              </button>
+            </div>
           )}
         </div>
       </div>
