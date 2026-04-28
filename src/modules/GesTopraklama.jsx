@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import NumInput from '../components/NumInput.jsx';
+import { exportGesTopraklamaPDF, exportGesTopraklamaWord } from '../utils/export.js';
 
 // ─── UTP Tablosu ─────────────────────────────────────────────────
 const UTP_TABLE = [
@@ -20,6 +21,19 @@ function getUtp(t) {
   return 100;
 }
 
+// Adım gerilimi sınırları (ETT Yönetmeliği — arazi için)
+const LIMITS = {
+  0.5:  { Ua: 400 },
+  1.0:  { Ua: 200 },
+  2.0:  { Ua: 150 },
+  5.0:  { Ua: 140 },
+  10.0: { Ua: 140 },
+};
+function getLimitUa(t) {
+  const keys = Object.keys(LIMITS).map(Number).sort((a,b)=>a-b);
+  const found = keys.find(k => k >= t);
+  return LIMITS[found || keys[keys.length-1]]?.Ua || 200;
+}
 const R_SEL = [
   { label: 'Sadece havai hat',          r: 0.6  },
   { label: 'Karma (havai + yer altı)',  r: 0.45 },
@@ -339,13 +353,13 @@ const BIRIM_EMPTY = (isim) => ({ isim, seritAktif: true, a: 7.3, b: 2.5, L: 19.6
 
 export default function GesTopraklama({ initialIk1 = 0 }) {
   const [mod,  setMod]  = useState('arazi');
-  const [Ik1,  setIk1]  = useState(initialIk1 || 0.659);
   const [rhoE, setRhoE] = useState(100);
-  const [rIdx, setRIdx] = useState(2);
   const [t,    setT]    = useState(1.0);
-  const [nInv, setNInv] = useState(8);
 
-  // Arazi
+  // ── ARAZİ (OG) parametreleri ──────────────────────────────────
+  const [Ik1,  setIk1]  = useState(initialIk1 || 0.659); // kA — I"k1 faz-toprak
+  const [rIdx, setRIdx] = useState(2);                    // bölünme katsayısı
+  const [nInv, setNInv] = useState(8);                    // evirici (RCD için)
   const [saha,    setSaha]    = useState({ isim: 'GES Santral Sahası', seritAktif: true, a: 250, b: 119, L: 1040, kazikAktif: true, n: 12, Lc: 1.5, dc: 0.05 });
   const [koskler, setKoskler] = useState([{ ...BIRIM_EMPTY('Trafo Köşkü 1'), id: 1 }]);
   const updSaha = (k, v) => setSaha(p => ({ ...p, [k]: v }));
@@ -353,61 +367,99 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
   const rmKosk  = i  => setKoskler(ks => ks.filter((_, j) => j !== i));
   const updKosk = (i, k, v) => setKoskler(ks => ks.map((ko, j) => j === i ? { ...ko, [k]: v } : ko));
 
-  // Çatı
-  const [Rmevcut,   setRmevcut]   = useState(5.0);
-  const [catiSerit, setCatiSerit] = useState({ L: 120, kesit: '30×3.5 mm Galvaniz Şerit' });
-  const [catiKazik, setCatiKazik] = useState({ aktif: false, n: 4, Lc: 1.5, dc: 0.05 });
+  // ── ÇATI (AG/TT) parametreleri ────────────────────────────────
+  // TT sistemde: Reş × IΔn ≤ 50V (IEC 60364-4-41)
+  // Arıza akımı = RCD çalışma akımı, I"k1 DEĞİL
+  const [iDeltaN,    setIDN]      = useState(0.3);   // A — RCD anma akımı (0.03 veya 0.3 A)
+  const [nInvCati,   setNInvCati] = useState(8);     // evirici sayısı
+  const [Rmevcut,    setRmevcut]  = useState(5.0);   // Ω — ölçülen bina toprağı
+  const [catiSerit,  setCatiSerit]= useState({ L: 120, kesit: '30×3.5 mm Galvaniz Şerit' });
+  const [catiKazik,  setCatiKazik]= useState({ aktif: false, n: 4, Lc: 1.5, dc: 0.05 });
 
   const [res, setRes] = useState(null);
   const r = R_SEL[rIdx].r;
 
   const hesapla = () => {
-    const Ik1_A = Ik1 * 1000;
-    const Utp   = getUtp(t);
-    const q_hesap = (Ik1_A * Math.sqrt(t)) / 115;
     const STD = [10,16,25,35,50,70,95,120,150,185];
-    const q_sec = STD.find(s => s >= q_hesap) || 185;
 
     if (mod === 'arazi') {
-      const sahaSon = calcBirim({ rhoE, ...saha });
-      const koskSon = koskler.map(k => calcBirim({ rhoE, ...k }));
-      const tumRes  = [sahaSon.Res, ...koskSon.map(k => k.Res)].filter(r => r && isFinite(r));
-      const finalRes = paralelAll(tumRes);
-      const It = r * Ik1_A;
-      const UE = finalRes * It;
+      // ── ARAZİ GES — OG TARAFI ─────────────────────────────────
+      // Standart: ETT Yönetmeliği / IEC EN 50522
+      // Arıza akımı: I"k1 (OG faz-toprak kısa devre)
+      // Kontrol: UE = Reş × It < UTP(t)
+      const Ik1_A = Ik1 * 1000;
+      const Utp   = getUtp(t);
+      const q_hesap = (Ik1_A * Math.sqrt(t)) / 115;
+      const q_sec   = STD.find(s => s >= q_hesap) || 185;
 
-      // Arazi adım gerilimi: saha sınırında, mesh eşdeğer yarıçapı kullanılarak
-      // Ua = ρ×It/(2π) × (1/r_mesh - 1/(r_mesh+1))  [TS EN 50522]
-      const A_saha = saha.a * saha.b;
-      const r_mesh = Math.sqrt(A_saha / Math.PI); // eşdeğer daire yarıçapı
+      const sahaSon  = calcBirim({ rhoE, ...saha });
+      const koskSon  = koskler.map(k => calcBirim({ rhoE, ...k }));
+      const tumRes   = [sahaSon.Res, ...koskSon.map(k => k.Res)].filter(x => x && isFinite(x));
+      const finalRes = paralelAll(tumRes);
+      const It  = r * Ik1_A;
+      const UE  = finalRes * It;
+      const dok_ok = UE < Utp;
+
+      // Adım gerilimi (arazi sınırı)
+      const A_saha  = saha.a * saha.b;
+      const r_mesh  = Math.sqrt(A_saha / Math.PI);
       const Ua_sinir = r_mesh > 0
         ? (rhoE * It / (2 * Math.PI)) * (1/r_mesh - 1/(r_mesh+1))
-        : (rhoE * It) / (4 * Math.PI);
+        : rhoE * It / (4 * Math.PI);
+      const adim_ok = Ua_sinir <= getLimitUa(t);
 
-      setRes({ mod: 'arazi', sahaSon, koskSon, finalRes, It, UE, Utp,
-               dok_ok: UE < 2*Utp,
-               adim_ok: Ua_sinir <= LIMITS[t]?.Ua,
-               Ua_sinir, r_mesh,
-               rcd_ok: finalRes <= 50/(nInv*0.3),
-               q_hesap, q_sec, Ik1_A });
+      // RCD koşulu (OG taraf için — normal işletme kaçak akımı)
+      const rcd_ok = finalRes <= 50 / (nInv * 0.3);
+
+      setRes({
+        mod: 'arazi', sahaSon, koskSon, finalRes, It, UE, Utp,
+        dok_ok, adim_ok, Ua_sinir, r_mesh, rcd_ok,
+        q_hesap, q_sec, Ik1_A,
+      });
+
     } else {
-      // ÇATI: ×1.10 UYGULANMAZ
-      // Rmevcut bina toprağı + kazık → saf paralel bağlantı
-      // ×1.10 sadece TASARLANMIŞ mesh + kazık sistemlerinde geçerlidir (ETT sf.83)
+      // ── ÇATI GES — AG TARAFI (TT Sistemi) ─────────────────────
+      // Standart: IEC 60364-7-712 / IEC 60364-4-41
+      // Sistem tipi: TT (Toprak-Toprak)
+      //
+      // Ana kontrol:  Reş × IΔn ≤ 50 V  (IEC 60364-4-41 md. 411.5.3)
+      //   IΔn = RCD'nin anma kaçak akımı (0.03 A veya 0.3 A)
+      //
+      // NOT: Bu hesapta OG'daki gibi büyük I"k1 kullanılmaz.
+      // Arıza akımı evirici toprak kaçak akımı ile sınırlıdır.
+      //
+      // İletken kesit: AG için k=115 (Cu), minimum 4 mm² (IEC 60364-7-712 Tablo 712.54.1)
+
       const { Rç } = catiKazik.aktif && catiKazik.n > 0
         ? calcRc(rhoE, catiKazik.n, catiKazik.Lc, catiKazik.dc)
         : { Rç: null };
       const aktifler = [Rmevcut, Rç].filter(x => x && isFinite(x));
-      const finalRes = paralelAll(aktifler); // ×1.10 YOK — çatı modu
-      const It = r * Ik1_A;
-      const UE = finalRes * It;
-      // Çatı: adım gerilimi uygulanamaz (yüzey eşpotansiyel)
-      setRes({ mod: 'cati', finalRes, Rç, It, UE, Utp,
-               dok_ok: UE < 2*Utp,
-               adim_ok: null,    // N/A — çatı eşpotansiyel yüzey
-               Ua_sinir: null,
-               rcd_ok: finalRes <= 50/(nInv*0.3),
-               q_hesap, q_sec, Ik1_A });
+      const finalRes = paralelAll(aktifler); // ×1.10 YOK — ölçülen değer + elektrot
+
+      // Ana kontrol (IEC 60364-4-41): Reş ≤ 50 / IΔn
+      const sinir_rcd = 50 / (nInvCati * iDeltaN);
+      const rcd_ok = finalRes <= sinir_rcd;
+
+      // Dokunma gerilimi (AG için sabit 50V sınırı — TT sistem)
+      // UE = Reş × Id (Id = evirici başına kaçak akım ≈ IΔn)
+      const Id_total = nInvCati * iDeltaN; // toplam kaçak akım
+      const UE = finalRes * Id_total;
+      const dok_ok = UE <= 50; // AG TT sistemde sabit 50V
+
+      // PE iletkeni min. kesit (IEC 60364-7-712, IEC 60364-5-54)
+      // AG'de küçük kaçak akımlar için min 4 mm² veya ana iletkenin yarısı
+      const q_min_ag = 4; // mm² — IEC 60364-7-712 minimum
+      const q_hesap  = 0; // AG'de I"k1 ile hesap yapılmaz
+      const q_sec    = q_min_ag;
+
+      setRes({
+        mod: 'cati', finalRes, Rç, UE, Id_total,
+        dok_ok, rcd_ok, sinir_rcd, nInvCati, iDeltaN,
+        q_hesap, q_sec,
+        // Arazi alanına ait alanlar yok
+        It: null, Utp: null, adim_ok: null, Ua_sinir: null,
+        Ik1_A: null,
+      });
     }
   };
 
@@ -437,23 +489,17 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
           </button>
           {res && (
             <div className="flex gap-2">
-              <button onClick={async () => {
-                const { exportGesTopraklamaPDF } = await import('../utils/export.js');
-                exportGesTopraklamaPDF(
-                  { mod, Ik1, rIdx, rhoE, t, nInv, saha, koskler, Rmevcut, catiSerit, catiKazik },
-                  res
-                );
-              }}
+              <button onClick={() => exportGesTopraklamaPDF(
+                { mod, Ik1, rIdx, rhoE, t, nInv, saha, koskler, Rmevcut, catiSerit, catiKazik },
+                res
+              )}
                 className="bg-white/20 hover:bg-white/30 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all">
                 🖨 PDF
               </button>
-              <button onClick={async () => {
-                const { exportGesTopraklamaWord } = await import('../utils/export.js');
-                exportGesTopraklamaWord(
-                  { mod, Ik1, rIdx, rhoE, t, nInv, saha, koskler, Rmevcut, catiSerit, catiKazik },
-                  res
-                );
-              }}
+              <button onClick={() => exportGesTopraklamaWord(
+                { mod, Ik1, rIdx, rhoE, t, nInv, saha, koskler, Rmevcut, catiSerit, catiKazik },
+                res
+              )}
                 className="bg-white/20 hover:bg-white/30 text-white font-bold py-2.5 px-5 rounded-xl text-sm transition-all">
                 📄 Word
               </button>
@@ -542,7 +588,8 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
             {res && <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-1.5 text-[10px] font-mono text-blue-700">It = {r}×{(Ik1*1000).toFixed(0)} = <b>{res.It?.toFixed(1)} A</b></div>}
           </div>
 
-          {/* Arıza süresi + RCD */}
+          {/* Arıza süresi + RCD — SADECE ARAZİ modu */}
+          {mod === 'arazi' && (
           <div className="bg-white p-5 rounded-xl border">
             <div className="flex items-center gap-2 mb-3 pb-2 border-b">
               <div className="w-3 h-3 rounded-full bg-violet-400"/>
@@ -562,50 +609,40 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
               RCD eşik = 50 / ({nInv}×0.3) = {(50/(nInv*0.3)).toFixed(2)} Ω
             </div>
           </div>
-
-          {/* ÇATI: mevcut + çatı şeridi + kazık */}
+          )}
           {mod === 'cati' && (
             <div className="bg-white p-5 rounded-xl border space-y-4">
               <div className="flex items-center gap-2 pb-2 border-b">
-                <div className="w-3 h-3 rounded-full bg-emerald-500"/>
-                <h3 className="font-black text-slate-700 text-sm uppercase">Çatı GES Elemanları</h3>
+                <div className="w-3 h-3 rounded-full bg-sky-500"/>
+                <h3 className="font-black text-slate-700 text-sm uppercase">Çatı GES — TT Sistemi</h3>
+              </div>
+              <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 text-xs text-sky-700">
+                <b>IEC 60364-7-712 / IEC 60364-4-41</b><br/>
+                TT sistemde ana kontrol: <b>Reş × IΔn ≤ 50V</b><br/>
+                Arıza akımı = RCD kaçak akımı (OG I"k1 değil)
               </div>
 
-              <NI label="Mevcut Bina Topraklaması R_mevcut [Ω]" value={Rmevcut} onChange={setRmevcut} unit="Ω" step={0.5} min={0.01}/>
-
-              <hr className="border-slate-100"/>
-
+              {/* RCD anma akımı */}
               <div>
-                <div className="text-xs font-bold text-teal-700 mb-1">Çatı Eşpotansiyel Şeridi</div>
-                <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 text-[10px] text-teal-700 mb-2">
-                  Gömülü elektrot değil — panel çerçevelerini eşpotansiyele bağlar, zemine karşı direnci R_mevcut üzerinden sağlanır.
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <NI label="Toplam Şerit L [m]" value={catiSerit.L} onChange={v => setCatiSerit(p=>({...p,L:v}))} unit="m" step={5} min={1}/>
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Lama Tipi</label>
-                    <input type="text" value={catiSerit.kesit}
-                      onChange={e => setCatiSerit(p=>({...p,kesit:e.target.value}))}
-                      className="w-full border-2 border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold bg-white focus:border-teal-400 outline-none"/>
-                  </div>
+                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">RCD Anma Kaçak Akımı IΔn</div>
+                <div className="flex gap-2">
+                  {[{v:0.03,l:'30 mA (hassas)'},{v:0.3,l:'300 mA (standart)'}].map(opt=>(
+                    <button key={opt.v} onClick={()=>setIDN(opt.v)}
+                      className={`flex-1 py-2 rounded-xl border-2 text-xs font-bold transition-all text-left px-3 ${iDeltaN===opt.v?'bg-sky-50 border-sky-500 text-sky-700':'border-slate-200 text-slate-500'}`}>
+                      <div>{opt.l}</div>
+                      <div className="font-mono">{opt.v} A</div>
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <hr className="border-slate-100"/>
-
-              <div>
-                <button onClick={() => setCatiKazik(p=>({...p,aktif:!p.aktif}))}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border-2 mb-2 transition-all ${catiKazik.aktif ? 'bg-amber-50 border-amber-400 text-amber-700' : 'border-slate-200 text-slate-400 bg-white'}`}>
-                  İlave Topraklama Kazığı {catiKazik.aktif ? '✓' : '○'}
-                </button>
-                {catiKazik.aktif && (
-                  <div className="grid grid-cols-3 gap-2">
-                    <NI label="n [adet]" value={catiKazik.n}  onChange={v=>setCatiKazik(p=>({...p,n:v}))}  unit="adet" step={1}     min={1}/>
-                    <NI label="Lç [m]"   value={catiKazik.Lc} onChange={v=>setCatiKazik(p=>({...p,Lc:v}))} unit="m"    step={0.5}   min={0.5}/>
-                    <NI label="dç [m]"   value={catiKazik.dc} onChange={v=>setCatiKazik(p=>({...p,dc:v}))} unit="m"    step={0.005} min={0.01}/>
-                  </div>
-                )}
+              <NI label="Evirici Sayısı" value={nInvCati} onChange={setNInvCati} unit="adet" step={1} min={1}/>
+              <div className="bg-slate-50 rounded-lg px-3 py-2 text-[10px] font-mono text-slate-500">
+                Toplam kaçak akım Id = {nInvCati} × {iDeltaN} = {(nInvCati*iDeltaN).toFixed(3)} A<br/>
+                Reş sınırı = 50 / {(nInvCati*iDeltaN).toFixed(3)} = {(50/(nInvCati*iDeltaN)).toFixed(2)} Ω
               </div>
+
+              <NI label="Mevcut Bina Toprağı R_mevcut [Ω]" value={Rmevcut} onChange={setRmevcut} unit="Ω" step={0.5} min={0.01}/>
             </div>
           )}
         </div>
@@ -733,21 +770,31 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
                     label={`${t} sn için izin verilen en yüksek dokunma gerilimi ${res.Utp} V`}
                     val={res.UE}
                     op="<"
-                    lim={res.Utp*2}
+                    lim={res.Utp}
                     unit="V"
-                    sub={`UE = ${res.UE?.toFixed(2)} V  ${res.dok_ok?'<':'>'} 2×UTP(${t}s) = ${res.Utp*2} V`}
+                    sub={`UE = ${res.UE?.toFixed(2)} V  ${res.dok_ok?'<':'>'} UTP(${t}s) = ${res.Utp} V`}
                   />
                 </div>
-                {res.dok_ok && (
-                  <div className="mt-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-xs text-green-700">
-                    ✓ Dokunma gerilimine göre topraklama sistemi uygun olduğu için adım gerilimine bakmaya gerek yoktur.
+                {res.mod === 'cati' && (
+                <>
+                  <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
+                    <div className="text-xs font-bold text-sky-700 mb-2">TT Sistemi — IEC 60364-4-41 md.411.5.3</div>
+                    <div className="text-[10px] font-mono text-slate-600 space-y-1">
+                      <div>Toplam kaçak akım Id = {nInvCati} × {iDeltaN} A = {(nInvCati*iDeltaN).toFixed(3)} A</div>
+                      <div>UE = Reş × Id = {res.finalRes?.toFixed(3)} × {(nInvCati*iDeltaN).toFixed(3)} = <b>{res.UE?.toFixed(2)} V</b></div>
+                    </div>
                   </div>
-                )}
-                {!res.dok_ok && (
-                  <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs text-red-700">
-                    ✗ Dokunma gerilimi aşılıyor. Reş düşürülmeli (daha fazla kazık / daha büyük saha ağı).
-                  </div>
-                )}
+                  <SCard
+                    ok={res.dok_ok}
+                    label="Dokunma Gerilimi — TT sistem sabit sınır 50V"
+                    val={res.UE}
+                    op="≤"
+                    lim={50}
+                    unit="V"
+                    sub={`UE = Reş × Id = ${res.finalRes?.toFixed(3)} × ${(nInvCati*iDeltaN).toFixed(3)} = ${res.UE?.toFixed(2)} V  ≤  50 V`}
+                  />
+                </>
+              )}
               </div>
 
               {/* Adım Gerilimi — arazi için göster, çatı için N/A */}
@@ -770,9 +817,9 @@ export default function GesTopraklama({ initialIk1 = 0 }) {
                     label={`Saha Sınırı Adım Gerilimi — t = ${t} s   (r_mesh = ${res.r_mesh?.toFixed(1)} m)`}
                     val={res.Ua_sinir}
                     op="<"
-                    lim={LIMITS[t]?.Ua}
+                    lim={getLimitUa(t)}
                     unit="V"
-                    sub={`Ua = ρ×It/(2π) × (1/r − 1/(r+1)) = ${rhoE}×${res.It?.toFixed(1)}/(2π) × (1/${res.r_mesh?.toFixed(1)} − 1/${(res.r_mesh+1)?.toFixed(1)}) = ${res.Ua_sinir?.toFixed(1)} V`}
+                    sub={`Ua = ρ×It/(2π) × (1/r − 1/(r+1)) = ${res.Ua_sinir?.toFixed(1)} V  |  Sınır: ${getLimitUa(t)} V`}
                   />
                 )}
               </div>
