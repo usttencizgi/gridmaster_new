@@ -1254,103 +1254,198 @@ export async function exportGesKabloWord(panel, sistem, dc, strings, ac1, ac2, r
 
 // ─── GES TOPRAKLAMA HTML/PDF EXPORT ─────────────────────────────
 export function exportGesTopraklamaPDF(inputs, res) {
-  const now  = new Date();
-  const tarih = now.toLocaleDateString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric'});
-  const saat  = now.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
-  const fmt = (n,d=3)=>(typeof n==='number'&&isFinite(n))?n.toFixed(d):'—';
-  const mod = inputs.mod||res.mod;
-  const Ik1_A = (inputs.Ik1||0)*1000;
-  const rLabels=['Sadece havai hat (r=0.60)','Karma havai+yer altı (r=0.45)','Sadece yer altı kablo (r=0.30)'];
-  const rVals=[0.6,0.45,0.3];
-  const rVal=rVals[inputs.rIdx||2];
+  const now=new Date();
+  const tarih=now.toLocaleDateString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const saat=now.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'});
+  const f=(n,d=3)=>(typeof n==='number'&&isFinite(n))?n.toFixed(d):'—';
+  const isArazi=res.mod==='arazi';
 
-  // ── UTP Eğrisi SVG ───────────────────────────────────────────
-  const UTP_TABLE=[{t:.05,U:900},{t:.10,U:750},{t:.20,U:500},{t:.50,U:200},{t:1,U:100},{t:2,U:75},{t:5,U:70},{t:10,U:70}];
-  const W=440,H=190,lx=42,rx=W-12,ty=16,by=H-24;
+  // ── Ortak: SVG yardımcıları ───────────────────────────────────
+  const okBox=(ok,lbl,val,op,lim,unit,sub='')=>`
+  <div style="border:2px solid ${ok?'#16a34a':'#dc2626'};background:${ok?'#f0fdf4':'#fef2f2'};border-radius:8px;padding:10px;margin:6px 0">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div>
+        <span style="font-size:10px;font-weight:700;color:#1e293b">${lbl}</span>
+        ${sub?`<div style="font-size:9px;color:#64748b;margin-top:2px;font-family:monospace">${sub}</div>`:''}
+      </div>
+      <span style="font-size:9px;font-weight:700;padding:3px 8px;border-radius:4px;background:${ok?'#dcfce7':'#fee2e2'};color:${ok?'#166534':'#991b1b'}">${ok?'✓ UYGUN':'✗ UYGUN DEĞİL'}</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div style="flex:1;text-align:center;padding:8px;border-radius:6px;background:${ok?'#dcfce7':'#fee2e2'}">
+        <div style="font-size:8px;color:#64748b;margin-bottom:2px">Hesaplanan</div>
+        <div style="font-size:20px;font-weight:900;font-family:monospace;color:${ok?'#15803d':'#dc2626'}">${typeof val==='number'?val.toFixed(2):val} ${unit}</div>
+      </div>
+      <div style="font-size:22px;font-weight:900;color:${ok?'#16a34a':'#dc2626'}">${op}</div>
+      <div style="flex:1;text-align:center;padding:8px;border-radius:6px;background:#f8fafc;border:1px solid #e2e8f0">
+        <div style="font-size:8px;color:#64748b;margin-bottom:2px">Sınır</div>
+        <div style="font-size:20px;font-weight:900;font-family:monospace;color:#334155">${lim} ${unit}</div>
+      </div>
+    </div>
+  </div>`;
+
+  // ── UTP eğrisi SVG (sadece OG/arazi için) ─────────────────────
+  const UTP=[{t:.05,U:900},{t:.1,U:750},{t:.2,U:500},{t:.5,U:200},{t:1,U:100},{t:2,U:75},{t:5,U:70},{t:10,U:70}];
+  const W=400,H=160,lx=38,rx=W-10,ty=14,by=H-20;
   const tx=tv=>lx+(Math.log10(tv)-Math.log10(.03))/(Math.log10(10)-Math.log10(.03))*(rx-lx);
   const uy=uv=>by-(Math.log10(Math.min(Math.max(uv,50),1200))-Math.log10(50))/(Math.log10(1200)-Math.log10(50))*(by-ty);
-  const utpPts=UTP_TABLE.map(p=>`${tx(p.t).toFixed(1)},${uy(p.U).toFixed(1)}`).join(' ');
-  const utpSvg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px">
-    <text x="${W/2}" y="12" text-anchor="middle" font-size="9" font-weight="bold" fill="#334155">İzin Verilen Maks. Dokunma Gerilimi UTP — ETT Yönetmeliği / IEC 60479</text>
-    ${[70,100,200,500,1000].map(u=>`<line x1="${lx}" y1="${uy(u)}" x2="${rx}" y2="${uy(u)}" stroke="#e2e8f0" stroke-width="0.6"/>
-      <text x="${lx-3}" y="${uy(u)+3}" text-anchor="end" font-size="7" fill="#94a3b8">${u}</text>`).join('')}
-    ${[.05,.1,.2,.5,1,2,5,10].map(tv=>`<line x1="${tx(tv)}" y1="${ty}" x2="${tx(tv)}" y2="${by}" stroke="#e2e8f0" stroke-width="0.6"/>
-      <text x="${tx(tv)}" y="${H-10}" text-anchor="middle" font-size="7" fill="#94a3b8">${tv}</text>`).join('')}
-    <line x1="${lx}" y1="${ty}" x2="${lx}" y2="${by}" stroke="#94a3b8" stroke-width="1"/>
-    <line x1="${lx}" y1="${by}" x2="${rx}" y2="${by}" stroke="#94a3b8" stroke-width="1"/>
-    <text x="${rx+2}" y="${by+2}" font-size="7" fill="#64748b">s</text>
-    <text x="${lx-2}" y="${ty-2}" font-size="7" fill="#64748b">V</text>
-    <polyline points="${utpPts}" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linejoin="round"/>
-    <line x1="${tx(inputs.t)}" y1="${ty}" x2="${tx(inputs.t)}" y2="${by}" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4,2"/>
-    <circle cx="${tx(inputs.t)}" cy="${uy(res.Utp)}" r="4" fill="#f59e0b" stroke="white" stroke-width="1.5"/>
-    <text x="${tx(inputs.t)+5}" y="${uy(res.Utp)-3}" font-size="8" fill="#92400e" font-weight="bold">UTP=${res.Utp}V  (t=${inputs.t}s)</text>
-    ${res.UE>0&&res.UE<1500?`<line x1="${lx}" y1="${uy(res.UE)}" x2="${rx}" y2="${uy(res.UE)}" stroke="${res.dok_ok?'#3b82f6':'#ef4444'}" stroke-width="1.5" stroke-dasharray="5,2"/>
-    <text x="${rx-2}" y="${uy(res.UE)-3}" text-anchor="end" font-size="7.5" font-weight="bold" fill="${res.dok_ok?'#1d4ed8':'#dc2626'}">UE=${fmt(res.UE,1)}V</text>`:''}
-    ${res.Utp*2<1200?`<line x1="${lx}" y1="${uy(res.Utp*2)}" x2="${rx}" y2="${uy(res.Utp*2)}" stroke="#10b981" stroke-width="1" stroke-dasharray="3,2" opacity="0.5"/>
-    <text x="${rx-2}" y="${uy(res.Utp*2)-3}" text-anchor="end" font-size="7" fill="#064e3b">2×UTP=${res.Utp*2}V</text>`:''}
-    <text x="${W/2}" y="${H-5}" text-anchor="middle" font-size="8" fill="#475569">Akım Süresi t_F (s)</text>
-    <text x="8" y="${(ty+by)/2}" font-size="8" fill="#475569" transform="rotate(-90,8,${(ty+by)/2})">U_TP (V)</text>
+  const utpPts=UTP.map(p=>`${tx(p.t).toFixed(1)},${uy(p.U).toFixed(1)}`).join(' ');
+  const t_og=inputs.t||1;
+  const utp_val=res.Utp||100;
+  const ue_val=res.UE||0;
+  const utpSvg=`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;max-width:100%">
+  <text x="${W/2}" y="11" text-anchor="middle" font-size="8" font-weight="bold" fill="#334155">UTP Dokunma Gerilimi Sınırı — ETT Yönetmeliği / IEC 60479</text>
+  ${[70,100,200,500,1000].map(u=>`<line x1="${lx}" y1="${uy(u)}" x2="${rx}" y2="${uy(u)}" stroke="#e2e8f0" stroke-width="0.5"/><text x="${lx-3}" y="${uy(u)+3}" text-anchor="end" font-size="6" fill="#94a3b8">${u}</text>`).join('')}
+  ${[.05,.1,.2,.5,1,2,5,10].map(tv=>`<line x1="${tx(tv)}" y1="${ty}" x2="${tx(tv)}" y2="${by}" stroke="#e2e8f0" stroke-width="0.5"/><text x="${tx(tv)}" y="${H-8}" text-anchor="middle" font-size="6" fill="#94a3b8">${tv}</text>`).join('')}
+  <line x1="${lx}" y1="${ty}" x2="${lx}" y2="${by}" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="${lx}" y1="${by}" x2="${rx}" y2="${by}" stroke="#94a3b8" stroke-width="1"/>
+  <polyline points="${utpPts}" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linejoin="round"/>
+  <line x1="${tx(t_og)}" y1="${ty}" x2="${tx(t_og)}" y2="${by}" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4,2"/>
+  <circle cx="${tx(t_og)}" cy="${uy(utp_val)}" r="3.5" fill="#f59e0b" stroke="white" stroke-width="1.5"/>
+  <text x="${tx(t_og)+4}" y="${uy(utp_val)-3}" font-size="7" fill="#92400e" font-weight="bold">UTP=${utp_val}V (t=${t_og}s)</text>
+  ${ue_val>0&&ue_val<1200?`<line x1="${lx}" y1="${uy(ue_val)}" x2="${rx}" y2="${uy(ue_val)}" stroke="${res.dok_ok?'#2563eb':'#ef4444'}" stroke-width="1.5" stroke-dasharray="5,2"/>
+  <text x="${rx-2}" y="${uy(ue_val)-3}" text-anchor="end" font-size="7" font-weight="bold" fill="${res.dok_ok?'#1d4ed8':'#dc2626'}">UE=${f(ue_val,1)}V</text>`:''}
   </svg>`;
 
-  // ── G Kesit Eğrileri SVG ─────────────────────────────────────
-  const K_CURVES=[{k:180,lbl:'1 — Galv. Çelik (k=180)',col:'#1e3a5f',dash:''},{k:143,lbl:'2 — XLPE Cu (k=143)',col:'#3b82f6',dash:'6,3'},{k:115,lbl:'3 — Çıplak Cu (k=115)',col:'#10b981',dash:'3,3'},{k:76,lbl:'4 — Al (k=76)',col:'#f59e0b',dash:'8,3,2,3'}];
-  const GW=440,GH=190,glx=50,grx=GW-12,gty=16,gby=GH-24;
+  // ── G Kesit eğrisi SVG (sadece OG/arazi için) ─────────────────
+  const KC=[{k:180,c:'#1e3a5f',d:''},{k:143,c:'#3b82f6',d:'6,3'},{k:115,c:'#10b981',d:'3,3'},{k:76,c:'#f59e0b',d:'8,3,2,3'}];
+  const GW=400,GH=160,glx=46,grx=GW-10,gty=14,gby=GH-20;
   const gtx=tv=>glx+(Math.log10(tv)-Math.log10(.05))/(Math.log10(10)-Math.log10(.05))*(grx-glx);
   const ggy=gv=>gby-(Math.log10(Math.min(Math.max(gv,10),2000))-Math.log10(10))/(Math.log10(2000)-Math.log10(10))*(gby-gty);
   const gCurve=k=>{const pts=[];for(let i=0;i<=60;i++){const tv=Math.pow(10,Math.log10(.05)+i/60*(Math.log10(10)-Math.log10(.05)));const gv=k/Math.sqrt(tv);if(gv>=10&&gv<=3000)pts.push(`${gtx(tv).toFixed(1)},${ggy(gv).toFixed(1)}`);}return pts.join(' ');};
-  const G_hesap=Ik1_A>0?Ik1_A/Math.sqrt(inputs.t):0;
-  const gSvg=`<svg xmlns="http://www.w3.org/2000/svg" width="${GW}" height="${GH}" viewBox="0 0 ${GW} ${GH}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px">
-    <text x="${GW/2}" y="12" text-anchor="middle" font-size="9" font-weight="bold" fill="#334155">G — İletken Isınma Kapasitesi (A/mm²) vs Arıza Süresi t_F</text>
-    ${[10,20,40,80,150,300,600,1000,2000].map(g=>`<line x1="${glx}" y1="${ggy(g)}" x2="${grx}" y2="${ggy(g)}" stroke="#e2e8f0" stroke-width="0.5"/>
-      <text x="${glx-3}" y="${ggy(g)+3}" text-anchor="end" font-size="6.5" fill="#94a3b8">${g}</text>`).join('')}
-    ${[.06,.1,.2,.4,.6,1,2,4,6,10].map(tv=>`<line x1="${gtx(tv)}" y1="${gty}" x2="${gtx(tv)}" y2="${gby}" stroke="#e2e8f0" stroke-width="0.5"/>
-      <text x="${gtx(tv)}" y="${GH-10}" text-anchor="middle" font-size="6.5" fill="#94a3b8">${tv}</text>`).join('')}
-    <line x1="${glx}" y1="${gty}" x2="${glx}" y2="${gby}" stroke="#94a3b8" stroke-width="1"/>
-    <line x1="${glx}" y1="${gby}" x2="${grx}" y2="${gby}" stroke="#94a3b8" stroke-width="1"/>
-    ${K_CURVES.map((c,ci)=>`<polyline points="${gCurve(c.k)}" fill="none" stroke="${c.col}" stroke-width="${c.k===115?2.5:1.8}" stroke-dasharray="${c.dash}" stroke-linejoin="round"/>
-      <text x="${grx+2}" y="${ggy(c.k/Math.sqrt(6))+3}" font-size="7" fill="${c.col}" font-weight="bold">${ci+1}</text>`).join('')}
-    ${inputs.t>=.05&&inputs.t<=10?`<line x1="${gtx(inputs.t)}" y1="${gty}" x2="${gtx(inputs.t)}" y2="${gby}" stroke="#ef4444" stroke-width="1.8" stroke-dasharray="4,2"/>
-    <text x="${gtx(inputs.t)+3}" y="${gty+10}" font-size="8" fill="#dc2626" font-weight="bold">t=${inputs.t}s</text>`:''}
-    ${G_hesap>10&&G_hesap<2000?`<circle cx="${gtx(inputs.t)}" cy="${ggy(G_hesap)}" r="4.5" fill="#ef4444" stroke="white" stroke-width="1.5"/>
-    <text x="${gtx(inputs.t)+7}" y="${ggy(G_hesap)+3}" font-size="8" font-weight="bold" fill="#dc2626">G=${G_hesap.toFixed(0)} A/mm²</text>`:''}
-    ${K_CURVES.map((c,i)=>`<g transform="translate(${glx+4},${gby-52+i*13})"><line x1="0" y1="4" x2="16" y2="4" stroke="${c.col}" stroke-width="1.8" stroke-dasharray="${c.dash}"/><text x="19" y="7" font-size="7" fill="#334155">${c.lbl}</text></g>`).join('')}
-    <text x="${GW/2}" y="${GH-4}" text-anchor="middle" font-size="8" fill="#475569">t_F (s)</text>
-    <text x="9" y="${(gty+gby)/2}" font-size="8" fill="#475569" transform="rotate(-90,9,${(gty+gby)/2})">G (A/mm²)</text>
+  const Ik1A=(inputs.Ik1||0)*1000;
+  const G_hesap=Ik1A>0?Ik1A/Math.sqrt(t_og):0;
+  const gSvg=`<svg xmlns="http://www.w3.org/2000/svg" width="${GW}" height="${GH}" viewBox="0 0 ${GW} ${GH}" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;max-width:100%">
+  <text x="${GW/2}" y="11" text-anchor="middle" font-size="8" font-weight="bold" fill="#334155">G — İletken Isınma Kapasitesi (A/mm²)</text>
+  ${[10,20,40,80,150,300,600,1000,2000].map(g=>`<line x1="${glx}" y1="${ggy(g)}" x2="${grx}" y2="${ggy(g)}" stroke="#e2e8f0" stroke-width="0.5"/><text x="${glx-3}" y="${ggy(g)+3}" text-anchor="end" font-size="5.5" fill="#94a3b8">${g}</text>`).join('')}
+  ${[.06,.1,.2,.4,.6,1,2,4,6,10].map(tv=>`<line x1="${gtx(tv)}" y1="${gty}" x2="${gtx(tv)}" y2="${gby}" stroke="#e2e8f0" stroke-width="0.5"/><text x="${gtx(tv)}" y="${GH-8}" text-anchor="middle" font-size="5.5" fill="#94a3b8">${tv}</text>`).join('')}
+  <line x1="${glx}" y1="${gty}" x2="${glx}" y2="${gby}" stroke="#94a3b8" stroke-width="1"/>
+  <line x1="${glx}" y1="${gby}" x2="${grx}" y2="${gby}" stroke="#94a3b8" stroke-width="1"/>
+  ${KC.map((c,ci)=>`<polyline points="${gCurve(c.k)}" fill="none" stroke="${c.c}" stroke-width="${c.k===115?2.2:1.5}" stroke-dasharray="${c.d}" stroke-linejoin="round"/><text x="${grx+2}" y="${ggy(c.k/Math.sqrt(5))+3}" font-size="6" fill="${c.c}">${ci+1}</text>`).join('')}
+  ${t_og>=.05&&t_og<=10?`<line x1="${gtx(t_og)}" y1="${gty}" x2="${gtx(t_og)}" y2="${gby}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4,2"/><text x="${gtx(t_og)+3}" y="${gty+10}" font-size="7" fill="#dc2626" font-weight="bold">t=${t_og}s</text>`:''}
+  ${G_hesap>10&&G_hesap<2000?`<circle cx="${gtx(t_og)}" cy="${ggy(G_hesap)}" r="4" fill="#ef4444" stroke="white" stroke-width="1.5"/><text x="${gtx(t_og)+6}" y="${ggy(G_hesap)+3}" font-size="7" font-weight="bold" fill="#dc2626">G=${G_hesap.toFixed(0)}</text>`:''}
+  ${KC.map((c,i)=>`<g transform="translate(${glx+2},${gby-50+i*12})"><line x1="0" y1="4" x2="14" y2="4" stroke="${c.c}" stroke-width="1.5" stroke-dasharray="${c.d}"/><text x="16" y="7" font-size="6" fill="#334155">${i+1}  k=${c.k}</text></g>`).join('')}
   </svg>`;
 
-  // ── Topraklama direnç hesap detayları ────────────────────────
-  let rezRow='';
-  if(mod==='arazi'&&res.sahaSon){
-    const s=res.sahaSon;
-    rezRow+=`<tr><td><b>${inputs.saha?.isim||'Saha'}</b></td><td class="mono">${fmt(s.Rg)}</td><td class="mono">${fmt(s.Rç)}</td><td class="mono"><b>${fmt(s.Res)}</b></td><td>Rg∥Rç×1.10</td></tr>`;
+  // ── HTML ──────────────────────────────────────────────────────
+  const rLabels=['Sadece havai hat (r=0.60)','Karma havai+yer altı (r=0.45)','Sadece yer altı kablo (r=0.30)'];
+
+  let bodyHtml='';
+
+  if(isArazi){
+    // ── OG / Arazi GES raporu ──────────────────────────────────
+    const r_val=[.6,.45,.3][inputs.rIdx||2];
+    let rezRows='';
+    if(res.sahaSon){
+      const s=res.sahaSon;
+      rezRows+=`<tr><td><b>${inputs.saha?.isim||'GES Sahası'}</b></td><td class="mono">${f(s.Rg)}</td><td class="mono">${f(s.Rc)}</td><td class="mono"><b>${f(s.Res)}</b></td><td>Rg∥Rç×1.10</td></tr>`;
+    }
     (res.koskSon||[]).forEach((ks,i)=>{
-      rezRow+=`<tr><td><b>${inputs.koskler?.[i]?.isim||'Köşk '+(i+1)}</b></td><td class="mono">${fmt(ks.Rg)}</td><td class="mono">${fmt(ks.Rç)}</td><td class="mono"><b>${fmt(ks.Res)}</b></td><td>Rg∥Rç×1.10</td></tr>`;
+      rezRows+=`<tr><td><b>${inputs.koskler?.[i]?.isim||'Köşk '+(i+1)}</b></td><td class="mono">${f(ks?.Rg)}</td><td class="mono">${f(ks?.Rc)}</td><td class="mono"><b>${f(ks?.Res)}</b></td><td>Rg∥Rç×1.10</td></tr>`;
     });
-  } else if(mod==='cati'){
-    rezRow+=`<tr><td><b>Mevcut Bina Toprağı</b></td><td class="mono">—</td><td class="mono">—</td><td class="mono">${fmt(inputs.Rmevcut)}</td><td>Ölçülen değer</td></tr>`;
-    if(res.Rç) rezRow+=`<tr><td><b>İlave Kazık (${inputs.catiKazik?.n} adet)</b></td><td class="mono">—</td><td class="mono">${fmt(res.Rç)}</td><td class="mono">${fmt(res.Rç)}</td><td>Paralel kazıklar</td></tr>`;
+
+    bodyHtml=`
+    <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">1.  GİRİŞ VERİLERİ — OG TARAF (ETT Yönetmeliği / IEC EN 50522)</div>
+    <table><thead><tr><th>Parametre</th><th>Değer</th><th>Açıklama</th></tr></thead><tbody>
+      <tr><td>Sistem</td><td><b>OG — Trafo Merkezi Bağlantılı</b></td><td>IEC EN 50522</td></tr>
+      <tr><td>I"k1 (faz-toprak)</td><td class="mono"><b>${f(inputs.Ik1,3)} kA = ${Ik1A.toFixed(0)} A</b></td><td>OG kısa devre hesabından</td></tr>
+      <tr><td>Hata süresi t</td><td class="mono"><b>${t_og} s</b></td><td>Koruma rölesi gecikmesi</td></tr>
+      <tr><td>Zemin ρE</td><td class="mono"><b>${inputs.rho} Ω·m</b></td><td>Ölçüm/tablo</td></tr>
+      <tr><td>Bölünme katsayısı r</td><td class="mono"><b>${r_val}</b></td><td>${rLabels[inputs.rIdx||2]}</td></tr>
+      <tr><td>It = r × I"k1</td><td class="mono"><b>${f(res.It,1)} A</b></td><td>Topraktan geçen arıza akımı</td></tr>
+      <tr><td>UTP(${t_og}s)</td><td class="mono"><b>${utp_val} V</b></td><td>ETT Yönetmeliği UTP tablosu</td></tr>
+    </tbody></table>
+
+    <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">2.  TOPRAKLAMA DİRENCİ HESAPLARI</div>
+    <div style="font-size:9px;color:#475569;margin-bottom:6px;font-family:monospace">
+      D=√(4A/π) | Rg=ρ/(2D)+ρ/L | Rç=[ρ/(2πLç)]×ln(4Lç/dç)/n | Reş=(Rg×Rç)/(Rg+Rç)×1.10
+    </div>
+    <table><thead><tr><th>Birim</th><th>Rg (Ω)</th><th>Rç (Ω)</th><th>Reş (Ω)</th><th>Yöntem</th></tr></thead>
+    <tbody>${rezRows}</tbody></table>
+    <div style="padding:8px 12px;background:#ecfdf5;border:2px solid #10b981;border-radius:8px;font-family:monospace;font-size:11px;margin-top:8px">
+      <b>Final Reş = ${f(res.Res,4)} Ω</b>
+      (1/R = ${[res.sahaSon?.Res,...(res.koskSon||[]).map(k=>k?.Res)].filter(Boolean).map(v=>'1/'+f(v,3)).join(' + ')} → paralel bağlantı)
+    </div>
+
+    <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">3.  DOKUNMA GERİLİMİ KONTROLÜ</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="font-size:10px;color:#475569;margin-bottom:8px;font-family:monospace">
+          UE = It × Reş = ${f(res.It,1)} × ${f(res.Res,3)} = <b>${f(ue_val,2)} V</b>
+        </div>
+        ${okBox(res.dok_ok,`Dokunma Gerilimi — t=${t_og}s`,ue_val,'<',utp_val,'V',`UE=${f(ue_val,2)}V ${res.dok_ok?'<':'>'} UTP(${t_og}s)=${utp_val}V`)}
+        ${res.adim_ok!==null?okBox(res.adim_ok,'Adım Gerilimi (Saha Sınırı)',res.Ua,'<',200,'V',`Ua=${f(res.Ua,1)}V < ${200}V`):''}
+      </div>
+      <div>${utpSvg}</div>
+    </div>
+
+    <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">4.  TOPRAKLAMA İLETKENİ KESİTİ</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="font-size:10px;color:#475569;margin-bottom:8px">
+          <b>k = 115 A/mm² (çıplak bakır)</b><br><br>
+          S = I"k1 × √t / k = ${Ik1A.toFixed(0)} × √${t_og} / 115 = <b>${f(res.qH,2)} mm²</b><br><br>
+          Seçilen: <b style="font-size:14px">${res.qS} mm²</b><br><br>
+          <span style="font-size:9px;color:#64748b">ETT Yönetmeliği Çizelge-4a min. 50 mm² galvaniz şerit<br>30×3.5mm → 105 mm² > 50 mm² ✓</span>
+        </div>
+        <table><thead><tr><th>Eğri</th><th>Malzeme</th><th>k</th></tr></thead><tbody>
+          <tr><td>1</td><td>Galv. Çelik Şerit</td><td class="mono" style="color:#1e3a5f;font-weight:700">180</td></tr>
+          <tr><td>2</td><td>XLPE Cu</td><td class="mono" style="color:#3b82f6;font-weight:700">143</td></tr>
+          <tr style="background:#f0fdf4"><td>3</td><td><b>Çıplak Cu / PVC Cu</b></td><td class="mono" style="color:#15803d;font-weight:700">115 ✓</td></tr>
+          <tr><td>4</td><td>Alüminyum</td><td class="mono" style="color:#d97706;font-weight:700">76</td></tr>
+        </tbody></table>
+      </div>
+      <div>${gSvg}</div>
+    </div>
+
+    <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">5.  RCD KONTROLÜ (Normal İşletme)</div>
+    <div style="font-size:9px;color:#475569;margin-bottom:6px">OG tesisinde normal işletme kaçak akımı ≈ 0.3 A/evirici (IEC 60364-7-712)</div>
+    ${okBox(res.rcd_ok,`Reş ≤ 50/(${inputs.nInv}×0.3) = ${(50/(inputs.nInv*.3)).toFixed(2)} Ω`,res.Res,'≤',(50/(inputs.nInv*.3)).toFixed(2),'Ω',`Reş=${f(res.Res,3)}Ω ≤ ${(50/(inputs.nInv*.3)).toFixed(2)}Ω`)}
+    `;
+
+  } else {
+    // ── AG / Çatı GES raporu (TT Sistemi) ─────────────────────
+    const Id_total=res.Id||0;
+    const sinir=res.sinir||0;
+
+    bodyHtml=`
+    <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#0c4a6e;border-bottom:2px solid #0c4a6e;padding-bottom:4px">1.  GİRİŞ VERİLERİ — AG TARAF / TT Sistemi (IEC 60364-7-712)</div>
+    <div style="padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:10px;margin-bottom:8px">
+      <b>Sistem Tipi: TT (Toprak-Toprak)</b><br>
+      Çatı GES tesisinde AG şebekesine bağlantı. Koruma yöntemi: RCD (Kaçak Akım Rölesi).<br>
+      <b>Arıza akımı olarak I"k1 (OG kısa devre) KULLANILMAZ.</b> Kaçak akım = RCD anma değeri IΔn.
+    </div>
+    <table><thead><tr><th>Parametre</th><th>Değer</th><th>Açıklama</th></tr></thead><tbody>
+      <tr><td>Sistem</td><td><b>TT — AG Bağlantılı Çatı GES</b></td><td>IEC 60364-4-41 / IEC 60364-7-712</td></tr>
+      <tr><td>RCD Anma Akımı IΔn</td><td class="mono"><b>${inputs.iDn} A (${inputs.iDn===.03?'30mA — hassas':'300mA — standart'})</b></td><td>Her evirici için</td></tr>
+      <tr><td>Evirici Sayısı</td><td class="mono"><b>${inputs.nInvAG} adet</b></td><td></td></tr>
+      <tr><td>Toplam Id = n × IΔn</td><td class="mono"><b>${f(Id_total,3)} A</b></td><td>Toplam kaçak akım</td></tr>
+      <tr><td>Mevcut Bina Toprağı</td><td class="mono"><b>${f(inputs.Rmev,3)} Ω</b></td><td>Ölçülen/verilen değer</td></tr>
+      ${res.Rc?`<tr><td>İlave Kazık Rç</td><td class="mono"><b>${f(res.Rc,3)} Ω</b></td><td>Paralel bağlantı</td></tr>`:''}
+      <tr><td>Final Reş</td><td class="mono"><b>${f(res.Res,3)} Ω</b></td><td>Saf paralel (×1.10 uygulanmaz)</td></tr>
+    </tbody></table>
+
+    <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#0c4a6e;border-bottom:2px solid #0c4a6e;padding-bottom:4px">2.  ANA KONTROL — IEC 60364-4-41 Madde 411.5.3</div>
+    <div style="font-size:9px;color:#475569;margin-bottom:8px;font-family:monospace">
+      UE = Reş × Id = ${f(res.Res,3)} × ${f(Id_total,3)} = <b>${f(res.UE,2)} V</b><br>
+      Reş sınırı = 50V / Id = 50 / ${f(Id_total,3)} = <b>${f(sinir,2)} Ω</b>
+    </div>
+    ${okBox(res.dok_ok,'Dokunma Gerilimi — TT Sistemi Sabit Sınır 50V',res.UE,'≤',50,'V',`UE=Reş×Id=${f(res.Res,3)}×${f(Id_total,3)}=${f(res.UE,2)}V ≤ 50V`)}
+    ${okBox(res.rcd_ok,`RCD Koşulu — Reş ≤ 50/Id = ${f(sinir,2)} Ω`,res.Res,'≤',f(sinir,2),'Ω',`Reş=${f(res.Res,3)}Ω ≤ 50/${f(Id_total,3)}=${f(sinir,2)}Ω`)}
+
+    <div style="margin:12px 0 6px;font-size:13px;font-weight:900;color:#0c4a6e;border-bottom:2px solid #0c4a6e;padding-bottom:4px">3.  PE İLETKENİ MİNİMUM KESİTİ</div>
+    <div style="font-size:10px;color:#475569;margin-bottom:8px">
+      IEC 60364-7-712 Madde 712.54.1 gereği çatı GES tesislerinde min. PE iletken kesiti <b>4 mm²</b> (Cu) veya <b>16 mm²</b> (Al).<br>
+      OG'daki gibi kısa devre akımına dayalı (S=I×√t/k) hesap yapılmaz — AG tesisinde arıza akımı RCD kesme süresi ile sınırlıdır.
+    </div>
+    <table><thead><tr><th>Durum</th><th>Min. Kesit</th><th>Açıklama</th></tr></thead><tbody>
+      <tr><td>Çatı GES PE iletken</td><td class="mono"><b>4 mm² Cu</b></td><td>IEC 60364-7-712 md.712.54.1</td></tr>
+      <tr><td>Eşpotansiyel şerit</td><td class="mono"><b>6 mm² Cu</b></td><td>IEC 60364-5-54 md.543.3</td></tr>
+      <tr><td>Topraklama iletkeni</td><td class="mono"><b>50 mm² galv. çelik</b></td><td>TS EN 50522 min. şerit kesiti</td></tr>
+    </tbody></table>
+    `;
   }
 
-  const okBox=(ok,lbl,val,op,lim,unit)=>`
-    <div style="border:2px solid ${ok?'#16a34a':'#dc2626'};background:${ok?'#f0fdf4':'#fef2f2'};border-radius:8px;padding:10px;margin:6px 0">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-size:10px;font-weight:700;color:#1e293b">${lbl}</span>
-        <span style="font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;background:${ok?'#dcfce7':'#fee2e2'};color:${ok?'#166534':'#991b1b'}">${ok?'✓ UYGUN':'✗ UYGUN DEĞİL'}</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <div style="flex:1;text-align:center;padding:6px;border-radius:6px;background:${ok?'#dcfce7':'#fee2e2'}">
-          <div style="font-size:8px;color:#64748b;margin-bottom:2px">Hesaplanan</div>
-          <div style="font-size:18px;font-weight:900;font-family:monospace;color:${ok?'#15803d':'#dc2626'}">${val} ${unit}</div>
-        </div>
-        <div style="font-size:20px;font-weight:900;color:${ok?'#16a34a':'#dc2626'}">${op}</div>
-        <div style="flex:1;text-align:center;padding:6px;border-radius:6px;background:#f8fafc;border:1px solid #e2e8f0">
-          <div style="font-size:8px;color:#64748b;margin-bottom:2px">Sınır</div>
-          <div style="font-size:18px;font-weight:900;font-family:monospace;color:#334155">${lim} ${unit}</div>
-        </div>
-      </div>
-    </div>`;
-
-  const html=`
+  const kapak=`
   <table style="margin-bottom:0;font-size:11px"><tr>
     <td style="width:55%;vertical-align:top;padding:0">
       <div style="background:#065f46;color:white;padding:10px 14px;border-radius:6px 6px 0 0">
@@ -1358,80 +1453,21 @@ export function exportGesTopraklamaPDF(inputs, res) {
         <div style="font-size:10px;opacity:.8;margin-top:2px">Elektrik Mühendisliği Hesap Platformu</div>
       </div>
       <div style="background:#ecfdf5;padding:8px 14px;border:1px solid #a7f3d0;border-top:none">
-        <div style="font-size:14px;font-weight:900;color:#065f46">GES TOPRAKLAMA VE DOKUNMA GERİLİMİ HESABI</div>
-        <div style="font-size:10px;color:#475569;margin-top:2px">ETT Yönetmeliği · IEC EN 50522 · ${mod==='arazi'?'Arazi GES':'Çatı GES'}</div>
+        <div style="font-size:14px;font-weight:900;color:#065f46">GES TOPRAKLAMA VE DOKUNMA GERİLİMİ</div>
+        <div style="font-size:10px;color:#475569;margin-top:2px">${isArazi?'OG Tarafi — ETT Yönetmeliği / IEC EN 50522':'AG Tarafi — IEC 60364-7-712 / TT Sistemi'}</div>
       </div>
     </td>
     <td style="width:45%;vertical-align:top;padding:0">
       <table style="width:100%;font-size:10px;margin:0;border:1px solid #a7f3d0">
-        <tr><td style="padding:3px 8px;background:#ecfdf5;font-weight:700">Standart</td><td>ETT Yönetmeliği / IEC EN 50522</td></tr>
+        <tr><td style="padding:3px 8px;background:#ecfdf5;font-weight:700">Standart</td><td>${isArazi?'ETT Yönetmeliği / IEC EN 50522':'IEC 60364-7-712 / IEC 60364-4-41'}</td></tr>
         <tr><td style="padding:3px 8px;background:#ecfdf5;font-weight:700">Tarih</td><td>${tarih} ${saat}</td></tr>
-        <tr><td style="padding:3px 8px;background:#ecfdf5;font-weight:700">GES Tipi</td><td style="font-weight:700">${mod==='arazi'?'Arazi GES':'Çatı GES'}</td></tr>
-        <tr><td style="padding:3px 8px;background:#ecfdf5;font-weight:700">I"k1 (kA)</td><td class="mono">${fmt(inputs.Ik1,3)} kA = ${Ik1_A.toFixed(0)} A</td></tr>
-        <tr><td style="padding:3px 8px;background:#ecfdf5;font-weight:700">Sonuç</td><td style="font-weight:700;color:${res.dok_ok&&res.rcd_ok?'#166534':'#991b1b'}">${res.dok_ok&&res.rcd_ok?'✓ SİSTEM UYGUN':'✗ UYGUNSUZLUK VAR'}</td></tr>
+        <tr><td style="padding:3px 8px;background:#ecfdf5;font-weight:700">GES Tipi</td><td style="font-weight:700">${isArazi?'Arazi GES (OG bağlantılı)':'Çatı GES (AG/TT sistemi)'}</td></tr>
+        <tr><td style="padding:3px 8px;background:#ecfdf5;font-weight:700">Final Reş</td><td class="mono" style="font-weight:700">${f(res.Res,3)} Ω</td></tr>
+        <tr><td style="padding:3px 8px;background:#ecfdf5;font-weight:700">Sonuç</td><td style="font-weight:700;color:${res.dok_ok&&res.rcd_ok?'#15803d':'#dc2626'}">${res.dok_ok&&res.rcd_ok?'✓ SİSTEM UYGUN':'✗ UYGUNSUZLUK VAR'}</td></tr>
       </table>
     </td>
   </tr></table>
-
-  <div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">1.  GİRİŞ VERİLERİ</div>
-  <table><thead><tr><th>Parametre</th><th>Değer</th><th>Açıklama</th></tr></thead><tbody>
-    <tr><td>Faz-Toprak Arıza Akımı I"k1</td><td class="mono"><b>${fmt(inputs.Ik1,3)} kA = ${Ik1_A.toFixed(0)} A</b></td><td>OG kısa devre hesabından</td></tr>
-    <tr><td>Hata Temizleme Süresi t</td><td class="mono"><b>${inputs.t} s</b></td><td>Koruma rölesi gecikmesi</td></tr>
-    <tr><td>Zemin Özgül Direnci ρE</td><td class="mono"><b>${inputs.rhoE} Ω·m</b></td><td>Ölçüm / tablo değeri</td></tr>
-    <tr><td>Bölünme Katsayısı r</td><td class="mono"><b>r = ${rVal}</b></td><td>${rLabels[inputs.rIdx||2]}</td></tr>
-    <tr><td>It = r × I"k1</td><td class="mono"><b>${fmt(res.It,1)} A</b></td><td>Topraktan geçen arıza akımı</td></tr>
-    <tr><td>Evirici Sayısı (RCD)</td><td class="mono"><b>${inputs.nInv} adet</b></td><td>Pano başına</td></tr>
-  </tbody></table>
-
-  <div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">2.  TOPRAKLAMA DİRENCİ HESAPLARI</div>
-  ${mod==='arazi'?`
-  <div style="font-size:10px;color:#475569;margin-bottom:6px">
-    Formüller (ETT Yönetmeliği sf.83 / Schwarz):<br>
-    D = √(4A/π) &nbsp;|&nbsp; Rg = ρ/(2D) + ρ/L &nbsp;|&nbsp; Rç_tek = [ρ/(2πLç)] × ln(4Lç/dç) &nbsp;|&nbsp; Rç = Rç_tek/n &nbsp;|&nbsp; Reş = (Rg×Rç)/(Rg+Rç) × 1.10
-  </div>`:`
-  <div style="font-size:10px;color:#475569;margin-bottom:6px">Çatı tesisinde mevcut bina toprağı + opsiyonel kazık → saf paralel (×1.10 uygulanmaz)</div>`}
-  <table><thead><tr><th>Birim</th><th>Rg (Ω)</th><th>Rç (Ω)</th><th>Reş (Ω)</th><th>Yöntem</th></tr></thead>
-  <tbody>${rezRow}</tbody></table>
-  <div style="margin-top:8px;padding:8px 12px;background:#ecfdf5;border:2px solid #10b981;border-radius:8px;font-family:monospace;font-size:11px">
-    <b>Final Reş = ${fmt(res.finalRes,4)} Ω</b>
-    ${mod==='arazi'&&res.koskSon?.length?` &nbsp;(1/${[res.sahaSon?.Res,...res.koskSon.map(k=>k?.Res)].filter(Boolean).map(v=>`1/${fmt(v,3)}`).join('+')} = paralel bağlantı)`:''}
-  </div>
-
-  <div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">3.  DOKUNMA GERİLİMİ KONTROLÜ</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px">
-    <div>
-      <div style="font-size:10px;color:#475569;margin-bottom:6px">UE = It × Reş = ${fmt(res.It,1)} × ${fmt(res.finalRes,3)} = <b>${fmt(res.UE,2)} V</b></div>
-      ${okBox(res.dok_ok,`Dokunma Gerilimi — t=${inputs.t}s | UTP=${res.Utp}V`,fmt(res.UE,2),'<',res.Utp*2,'V')}
-      ${res.dok_ok?'<div style="font-size:9px;color:#64748b;margin-top:4px;font-style:italic">✓ Dokunma gerilimine göre uygun — adım gerilimine bakılmasına gerek yok.</div>':''}
-    </div>
-    <div>${utpSvg}</div>
-  </div>
-
-  <div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">4.  TOPRAKLAMA İLETKENİ KESİTİ</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:10px">
-    <div>
-      <div style="font-size:10px;color:#475569;margin-bottom:8px">
-        S = I"k1 × √t / k &nbsp;(k = 115 A/mm² — çıplak bakır)<br><br>
-        S = ${Ik1_A.toFixed(0)} × √${inputs.t} / 115 = <b>${fmt(res.q_hesap,2)} mm²</b><br><br>
-        Seçilen standart kesit: <b style="font-size:14px">${res.q_sec} mm²</b><br><br>
-        <span style="font-size:9px;color:#64748b">ETT Yönetmeliği Çizelge-4a min. 50 mm² galvaniz şerit gerektirir.<br>
-        30×3.5 mm galvanizli çelik şerit → A=105 mm² > 50 mm² ✓</span>
-      </div>
-      <table><thead><tr><th>Malzeme</th><th>k (A/mm²)</th><th>Başlangıç °C</th><th>Son °C</th></tr></thead>
-      <tbody>
-        <tr><td>Galv. Çelik Şerit</td><td class="mono" style="color:#1e3a5f;font-weight:700">180</td><td>—</td><td>300</td></tr>
-        <tr><td>XLPE Cu</td><td class="mono" style="color:#3b82f6;font-weight:700">143</td><td>90</td><td>250</td></tr>
-        <tr style="background:#f0fdf4"><td><b>Çıplak Cu / PVC Cu</b></td><td class="mono" style="color:#065f46;font-weight:700">115</td><td>70</td><td>160</td></tr>
-        <tr><td>Alüminyum</td><td class="mono" style="color:#d97706;font-weight:700">76</td><td>—</td><td>300</td></tr>
-      </tbody></table>
-    </div>
-    <div>${gSvg}</div>
-  </div>
-
-  <div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">5.  KAÇAK AKIM RÖLESİ KONTROLÜ</div>
-  <div style="font-size:10px;color:#475569;margin-bottom:6px">TT sistemlerde UL = 50V &nbsp;→&nbsp; Reş × IΔn ≤ 50V &nbsp;→&nbsp; Reş ≤ 50 / (n_inv × 0.3 A)</div>
-  ${okBox(res.rcd_ok,`Reş ≤ 50/(${inputs.nInv}×0.3) = ${fmt(50/(inputs.nInv*0.3),2)} Ω  |  ${inputs.nInv} evirici × 0.3 A`,fmt(res.finalRes,3),'≤',fmt(50/(inputs.nInv*0.3),2),'Ω')}
-  `;
+  ${bodyHtml}`;
 
   const win=window.open('','_blank','width=1200,height=850');
   win.document.write(`<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8">
@@ -1441,7 +1477,7 @@ export function exportGesTopraklamaPDF(inputs, res) {
     body{font-family:'Segoe UI',Arial,sans-serif;font-size:9.5px;color:#1e293b;background:white;padding:14px}
     table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:9px}
     th{background:#065f46;color:white;padding:4px 6px;text-align:left;font-weight:700;font-size:8px;text-transform:uppercase}
-    td{padding:3px 6px;border-bottom:1px solid #e2e8f0}
+    td{padding:3px 6px;border-bottom:1px solid #e2e8f0;vertical-align:middle}
     tr:nth-child(even) td{background:#f8fafc}
     .mono{font-family:'Consolas','Courier New',monospace}
     .toolbar{position:fixed;top:10px;right:10px;display:flex;gap:8px;z-index:9999;background:white;padding:8px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.15)}
@@ -1452,19 +1488,19 @@ export function exportGesTopraklamaPDF(inputs, res) {
     <button class="btn" style="background:#065f46;color:white" onclick="window.print()">🖨 PDF Yazdır</button>
     <button class="btn" style="background:#166534;color:white" onclick="dlWord()">📄 Word İndir</button>
   </div>
-  ${html}
+  ${kapak}
   <div style="margin-top:10px;padding-top:6px;border-top:1px solid #e2e8f0;font-size:8px;color:#94a3b8;display:flex;justify-content:space-between">
     <span>GridMaster — Elektrik Mühendisliği Hesap Platformu</span>
-    <span>ETT Yönetmeliği · IEC EN 50522 · ${tarih}</span>
+    <span>${isArazi?'ETT Yönetmeliği / IEC EN 50522':'IEC 60364-7-712 / IEC 60364-4-41'} · ${tarih}</span>
   </div>
   <script>
   function dlWord(){
     var bc=document.body.cloneNode(true);
     bc.querySelector('.toolbar')?.remove();
-    var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,font-size:10pt}table{border-collapse:collapse;width:100%}th{background:#065f46;color:white;padding:4pt 6pt;font-size:8pt;text-align:left}td{padding:3pt 6pt;border:1px solid #ccc}tr:nth-child(even)td{background:#f9f9f9}.mono{font-family:Courier}svg{width:100%}</style></head><body>'+bc.innerHTML+'</body></html>';
+    var h='<!DOCTYPE html><html><head><meta charset="UTF-8"><style>body{font-family:Arial,font-size:10pt}table{border-collapse:collapse;width:100%}th{background:#065f46;color:white;padding:4pt 6pt;font-size:8pt;text-align:left}td{padding:3pt 6pt;border:1px solid #ccc}tr:nth-child(even)td{background:#f9f9f9}.mono{font-family:Courier}svg{width:100%;height:auto}</style></head><body>'+bc.innerHTML+'</body></html>';
     var b=new Blob([h],{type:'application/vnd.ms-word'});
     var u=URL.createObjectURL(b);var a=document.createElement('a');
-    a.href=u;a.download='GES_Topraklama_Raporu.doc';
+    a.href=u;a.download='GES_Topraklama_${isArazi?'OG_Arazi':'AG_Cati'}_Raporu.doc';
     document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(u);
   }
   <\/script>
@@ -1472,280 +1508,151 @@ export function exportGesTopraklamaPDF(inputs, res) {
   win.document.close();
 }
 
-
+// ─── GES TOPRAKLAMA WORD (docx) ───────────────────────────────────
 export async function exportGesTopraklamaWord(inputs, res) {
   const {
     Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
     AlignmentType, BorderStyle, WidthType, ShadingType, PageBreak
   } = await import('docx');
-
-  const fmt  = (n, d = 3) => (typeof n === 'number' && !isNaN(n) && isFinite(n)) ? n.toFixed(d) : '—';
-  const now  = new Date();
-  const tarih = now.toLocaleDateString('tr-TR', { day:'2-digit', month:'2-digit', year:'numeric' });
-
-  const BD = '1F5C99', WH = 'FFFFFF', GR = 'C6EFCE', GT = '276221',
-        RF = 'FFC7CE', RT = '9C0006', GY = 'F2F2F2', BL = 'D6E4F0';
-
-  const sb = (c = 'AAAAAA') => ({ style: BorderStyle.SINGLE, size: 4, color: c });
-  const ab = () => ({ top: sb(), bottom: sb(), left: sb(), right: sb() });
-
-  function mc(text, { bold=false, fill=WH, tc='222222', align=AlignmentType.LEFT, colspan=1, w=null }={}) {
-    return new TableCell({
-      columnSpan: colspan, borders: ab(),
-      shading: { fill, type: ShadingType.CLEAR },
-      margins: { top: 55, bottom: 55, left: 100, right: 100 },
-      ...(w ? { width: { size: w, type: WidthType.DXA } } : {}),
-      children: [new Paragraph({ alignment: align,
-        children: [new TextRun({ text: String(text), bold, color: tc, font: 'Arial', size: 19 })] }) ]
-    });
+  const f=(n,d=3)=>(typeof n==='number'&&isFinite(n))?n.toFixed(d):'—';
+  const isArazi=res.mod==='arazi';
+  const now=new Date();
+  const tarih=now.toLocaleDateString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const sb=(c='AAAAAA')=>({style:BorderStyle.SINGLE,size:4,color:c});
+  const ab=()=>({top:sb(),bottom:sb(),left:sb(),right:sb()});
+  function mc(text,{bold=false,fill='FFFFFF',tc='222222',align=AlignmentType.LEFT,colspan=1}={}){
+    return new TableCell({columnSpan:colspan,borders:ab(),shading:{fill,type:ShadingType.CLEAR},
+      margins:{top:55,bottom:55,left:100,right:100},
+      children:[new Paragraph({alignment:align,children:[new TextRun({text:String(text),bold,color:tc,font:'Arial',size:19})]})]});
   }
-  const hRow = (labels, widths) => new TableRow({ tableHeader: true,
-    children: labels.map((l, i) => mc(l, { bold: true, fill: BD, tc: WH, w: widths[i] })) });
-  const dRow = (...cells) => new TableRow({ children: cells });
-  const okC  = ok => mc(ok ? '✓  UYGUN' : '✗  UYGUN DEĞİL', {
-    bold: true, align: AlignmentType.CENTER,
-    fill: ok ? GR : RF, tc: ok ? GT : RT });
+  const hRow=(labels,widths)=>new TableRow({tableHeader:true,children:labels.map((l,i)=>mc(l,{bold:true,fill:'1F5C99',tc:'FFFFFF'}))});
+  const dRow=(...cells)=>new TableRow({children:cells});
+  const okC=(ok)=>mc(ok?'✓  UYGUN':'✗  UYGUN DEĞİL',{bold:true,align:AlignmentType.CENTER,fill:ok?'C6EFCE':'FFC7CE',tc:ok?'276221':'9C0006'});
+  const hdg=text=>new Paragraph({spacing:{before:280,after:120},
+    border:{bottom:{style:BorderStyle.SINGLE,size:4,color:'1F5C99',space:2}},
+    children:[new TextRun({text,bold:true,font:'Arial',size:26,color:'1F5C99'})]});
+  const ln=(t,bold=false)=>new Paragraph({spacing:{before:40,after:40},children:[new TextRun({text:t,bold,font:'Arial',size:19})]});
+  const fml=t=>new Paragraph({spacing:{before:28,after:28},indent:{left:500},children:[new TextRun({text:t,font:'Courier New',size:18,color:'1F5C99'})]});
+  const bl=()=>new Paragraph({spacing:{before:40,after:40},children:[]});
+  const pg=()=>new Paragraph({children:[new PageBreak()]});
 
-  const hdg = text => new Paragraph({
-    spacing: { before: 280, after: 120 },
-    border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: BD, space: 2 } },
-    children: [new TextRun({ text, bold: true, font: 'Arial', size: 26, color: BD })] });
+  const Ik1A=(inputs.Ik1||0)*1000;
 
-  const subh = text => new Paragraph({
-    spacing: { before: 180, after: 80 },
-    children: [new TextRun({ text, bold: true, font: 'Arial', size: 21, color: '2E4057' })] });
+  const children=[
+    new Paragraph({alignment:AlignmentType.CENTER,spacing:{before:200,after:60},
+      children:[new TextRun({text:'GES TOPRAKLAMA VE DOKUNMA GERİLİMİ HESABI',bold:true,font:'Arial',size:30,color:'1F5C99'})]}),
+    new Paragraph({alignment:AlignmentType.CENTER,spacing:{before:0,after:300},
+      border:{bottom:{style:BorderStyle.SINGLE,size:8,color:'1F5C99',space:2}},
+      children:[new TextRun({text:`${isArazi?'Arazi GES — OG Taraf — ETT Yönetmeliği':'Çatı GES — AG TT Sistemi — IEC 60364-4-41'}  —  ${tarih}`,font:'Arial',size:20,color:'555555'})]}),
 
-  const ln = (text, bold = false) => new Paragraph({
-    spacing: { before: 40, after: 40 },
-    children: [new TextRun({ text, bold, font: 'Arial', size: 19, color: '222222' })] });
-
-  const fml = text => new Paragraph({
-    spacing: { before: 28, after: 28 }, indent: { left: 500 },
-    children: [new TextRun({ text, font: 'Courier New', size: 18, color: '1F5C99' })] });
-
-  const bl = () => new Paragraph({ spacing: { before: 40, after: 40 }, children: [] });
-  const pg = () => new Paragraph({ children: [new PageBreak()] });
-
-  const mod = inputs.mod || res.mod;
-  const Ik1_A = (inputs.Ik1 || 0) * 1000;
-  const rLabel = ['Sadece havai hat (r=0.6)', 'Karma (havai+yer altı) (r=0.45)', 'Sadece yer altı kablo (r=0.3)'][inputs.rIdx || 2];
-
-  const children = [
-    // Başlık
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 200, after: 60 },
-      children: [new TextRun({ text: 'TOPRAKLAMA VE DOKUNMA GERİLİMİ HESABI', bold: true, font: 'Arial', size: 30, color: BD })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 300 },
-      border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: BD, space: 2 } },
-      children: [new TextRun({ text: `${mod === 'arazi' ? 'Arazi GES' : 'Çatı GES'}  —  ETT Yönetmeliği · IEC EN 50522  —  ${tarih}`, font: 'Arial', size: 20, color: '555555' })] }),
-
-    // 1. Giriş Verileri
-    hdg('1.  GENEL GİRİŞ VERİLERİ'), bl(),
-    new Table({ width: { size: 9100, type: WidthType.DXA }, columnWidths: [4000, 2600, 2500],
-      rows: [
-        hRow(['Parametre', 'Değer', 'Açıklama'], [4000, 2600, 2500]),
-        dRow(mc('Faz-Toprak Arıza Akımı I"k1'), mc(`${fmt(inputs.Ik1,3)} kA = ${Ik1_A.toFixed(0)} A`, {bold:true}), mc('OG Kısa Devre Hesaplarından')),
-        dRow(mc('Hata Temizleme Süresi t'),      mc(`${inputs.t} s`, {bold:true}),    mc('Arıza süresi')),
-        dRow(mc('Toprak Özgül Direnci ρE'),       mc(`${inputs.rhoE} Ω·m`, {bold:true}), mc('Zemin ölçüm/tablodan')),
-        dRow(mc('Bölünme Katsayısı r'),           mc(`r = ${[0.6,0.45,0.3][inputs.rIdx||2]}`, {bold:true}), mc(rLabel)),
-        dRow(mc('Evirici Sayısı (pano başına)'),  mc(`${inputs.nInv} adet`, {bold:true}), mc('RCD kontrolü için')),
-        dRow(mc('Topraktan Geçen Akım It = r × Ik1'), mc(`${fmt(res.It,1)} A`, {bold:true, fill:BL}), mc('')),
-      ]
+    hdg('1.  GİRİŞ VERİLERİ'),bl(),
+    new Table({width:{size:9100,type:WidthType.DXA},columnWidths:[3800,2600,2700],
+      rows:[
+        hRow(['Parametre','Değer','Açıklama'],[]),
+        isArazi?[
+          dRow(mc('Arıza Akımı Türü'),mc('I"k1 — OG Faz-Toprak Kısa Devre',{bold:true}),mc('OG modülünden')),
+          dRow(mc('I"k1'),mc(`${f(inputs.Ik1,3)} kA = ${Ik1A.toFixed(0)} A`,{bold:true}),mc('')),
+          dRow(mc('Arıza Süresi t'),mc(`${inputs.t} s`,{bold:true}),mc('Koruma rölesi')),
+          dRow(mc('Bölünme Katsayısı r'),mc(`r = ${[.6,.45,.3][inputs.rIdx||2]}`,{bold:true}),mc(['Havai hat','Karma','Yer altı kablo'][inputs.rIdx||2])),
+          dRow(mc('It = r × I"k1'),mc(`${f(res.It,1)} A`,{bold:true,fill:'D6E4F0'}),mc('')),
+          dRow(mc('Zemin ρE'),mc(`${inputs.rho} Ω·m`,{bold:true}),mc('')),
+          dRow(mc(`UTP(${inputs.t}s)`),mc(`${res.Utp} V`,{bold:true}),mc('ETT UTP tablosu')),
+        ]:[ 
+          dRow(mc('Arıza Akımı Türü'),mc('IΔn — RCD Kaçak Akımı (I"k1 değil)',{bold:true}),mc('AG TT sistemi')),
+          dRow(mc('RCD Anma Akımı IΔn'),mc(`${inputs.iDn} A`,{bold:true}),mc(inputs.iDn===.03?'30 mA hassas':'300 mA standart')),
+          dRow(mc('Evirici Sayısı'),mc(`${inputs.nInvAG} adet`,{bold:true}),mc('')),
+          dRow(mc('Toplam Id = n × IΔn'),mc(`${(inputs.nInvAG*inputs.iDn).toFixed(3)} A`,{bold:true,fill:'D6E4F0'}),mc('')),
+          dRow(mc('Zemin ρE'),mc(`${inputs.rho} Ω·m`,{bold:true}),mc(inputs.cKazik?.aktif?'Kazık hesabı için':'')),
+          dRow(mc('TT Sistem Sınırı'),mc('50 V (sabit)',{bold:true}),mc('IEC 60364-4-41 md.411.5.3')),
+        ].flat(),
+      ].flat()
     }),
 
-    bl(), pg(),
+    bl(),pg(),
 
-    // 2. Topraklama Direnç Hesapları
-    hdg('2.  TOPRAKLAMA DİREÇ HESAPLARI'), bl(),
-
-    // Arazi modu
-    ...(mod === 'arazi' ? [
-      subh('2.1  GES Santral Sahası'), bl(),
-      ...(inputs.saha?.seritAktif && res.sahaSon?.Rg != null ? [
-        ln('Şerit Topraklayıcı Direnci:', true),
-        fml(`A = a × b = ${inputs.saha.a} × ${inputs.saha.b} = ${(inputs.saha.a*inputs.saha.b).toFixed(0)} m²`),
-        fml(`D = √(4×A/π) = √(4×${(inputs.saha.a*inputs.saha.b).toFixed(0)}/π) = ${fmt(res.sahaSon.D,2)} m`),
-        fml(`Rg = ρ/(2×D) + ρ/L = ${inputs.rhoE}/(2×${fmt(res.sahaSon.D,2)}) + ${inputs.rhoE}/${inputs.saha.L} = ${fmt(res.sahaSon.Rg,3)} Ω`),
-        bl(),
-      ] : []),
-      ...(inputs.saha?.kazikAktif && res.sahaSon?.Rç != null ? [
-        ln('Topraklama Kazığı Direnci:', true),
-        fml(`Rç_tek = [ρ/(2π×Lç)] × ln(4×Lç/dç) = [${inputs.rhoE}/(2π×${inputs.saha.Lc})] × ln(4×${inputs.saha.Lc}/${inputs.saha.dc}) = ${fmt(res.sahaSon.Rc_tek,3)} Ω`),
-        fml(`Rç = Rç_tek / n = ${fmt(res.sahaSon.Rc_tek,3)} / ${inputs.saha.n} = ${fmt(res.sahaSon.Rç,3)} Ω`),
-        bl(),
-      ] : []),
-      ...(inputs.saha?.seritAktif && inputs.saha?.kazikAktif && res.sahaSon?.Rg && res.sahaSon?.Rç ? [
-        ln('Saha Eşdeğer Direnci:', true),
-        fml(`Reş_ham = Rg×Rç/(Rg+Rç) = ${fmt(res.sahaSon.Rg,3)}×${fmt(res.sahaSon.Rç,3)}/(${fmt(res.sahaSon.Rg,3)}+${fmt(res.sahaSon.Rç,3)}) = ${fmt(res.sahaSon.Rg*res.sahaSon.Rç/(res.sahaSon.Rg+res.sahaSon.Rç),3)} Ω`),
-        ln('Topraklama çubuklarıyla ağın birbirinin etkisinin giderme payı %10 alınırsa:'),
-        fml(`Reş_saha = Reş_ham × 1,10 = ${fmt(res.sahaSon.Rg*res.sahaSon.Rç/(res.sahaSon.Rg+res.sahaSon.Rç),3)} × 1,10 = ${fmt(res.sahaSon.Res,3)} Ω`),
-        bl(),
-      ] : []),
-
-      // Köşkler
-      ...((inputs.koskler||[]).flatMap((ko, i) => {
-        const ks = res.koskSon?.[i];
-        if (!ks) return [];
-        return [
-          subh(`2.${i+2}  ${ko.isim || `Trafo Köşkü ${i+1}`}`), bl(),
-          ...(ko.seritAktif && ks.Rg != null ? [
-            fml(`D = √(4×${ko.a}×${ko.b}/π) = ${fmt(ks.D,2)} m`),
-            fml(`Rg = ${inputs.rhoE}/(2×${fmt(ks.D,2)}) + ${inputs.rhoE}/${ko.L} = ${fmt(ks.Rg,3)} Ω`),
-          ] : []),
-          ...(ko.kazikAktif && ks.Rç != null ? [
-            fml(`Rç_tek = ${fmt(ks.Rc_tek,3)} Ω  →  Rç = ${fmt(ks.Rc_tek,3)}/${ko.n} = ${fmt(ks.Rç,3)} Ω`),
-          ] : []),
-          ...(ko.seritAktif && ko.kazikAktif && ks.Rg && ks.Rç ? [
-            fml(`Reş_ham = ${fmt(ks.Rg,3)}×${fmt(ks.Rç,3)}/(${fmt(ks.Rg,3)}+${fmt(ks.Rç,3)}) × 1,10 = ${fmt(ks.Res,3)} Ω`),
-          ] : []),
-          bl(),
-        ];
-      })),
-
-      // Final
-      subh(`2.${(inputs.koskler||[]).length+2}  Final Eşdeğer Direnç (Paralel Kombinasyon)`),
-      ln('Tüm topraklama sistemleri paralel bağlandığında:'),
-      fml(`1/Reş = 1/${fmt(res.sahaSon?.Res,3)} + ${(res.koskSon||[]).map((ks,i)=>`1/${fmt(ks?.Res,3)}`).join(' + ')}`),
-      fml(`Reş = ${fmt(res.finalRes,3)} Ω`),
-
-    ] : [
-      // Çatı modu
-      subh('2.1  Mevcut Bina Topraklaması'), bl(),
-      fml(`R_mevcut = ${fmt(inputs.Rmevcut,3)} Ω  (ölçülen/verilen değer)`),
+    hdg('2.  TOPRAKLAMA DİRENCİ HESAPLARI'),bl(),
+    ...(isArazi?[
+      ln('Formüller (ETT Yönetmeliği sf.83 / Schwarz):'),
+      fml('D = √(4A/π)  |  Rg = ρ/(2D) + ρ/L  |  Rç = Rç_tek/n  |  Reş = (Rg×Rç)/(Rg+Rç) × 1.10'),bl(),
+      new Table({width:{size:9100,type:WidthType.DXA},columnWidths:[2500,1600,1600,1600,1800],
+        rows:[
+          hRow(['Birim','Rg (Ω)','Rç (Ω)','Reş (Ω)','Yöntem'],[]),
+          dRow(mc(inputs.saha?.isim||'Saha',{bold:true}),mc(f(res.sahaSon?.Rg),{align:AlignmentType.CENTER}),mc(f(res.sahaSon?.Rc),{align:AlignmentType.CENTER}),mc(f(res.sahaSon?.Res),{bold:true,align:AlignmentType.CENTER,fill:'D6E4F0'}),mc('Rg∥Rç×1.10')),
+          ...(res.koskSon||[]).map((ks,i)=>dRow(mc(inputs.koskler?.[i]?.isim||`Köşk ${i+1}`,{bold:true}),mc(f(ks?.Rg),{align:AlignmentType.CENTER}),mc(f(ks?.Rc),{align:AlignmentType.CENTER}),mc(f(ks?.Res),{bold:true,align:AlignmentType.CENTER,fill:'D6E4F0'}),mc('Rg∥Rç×1.10'))),
+        ]
+      }),
       bl(),
-      subh('2.2  Çatı Eşpotansiyel Şeridi'), bl(),
-      ln(`${inputs.catiSerit?.L || 0} m ${inputs.catiSerit?.kesit || '30×3.5 mm Galvaniz Şerit'} — gömülü elektrot değildir.`),
-      ln('Panel çerçevelerini eşpotansiyele bağlar. Zemine karşı direnci mevcut topraklama üzerinden sağlanır.'),
-      bl(),
-      ...(inputs.catiKazik?.aktif && res.Rç ? [
-        subh('2.3  İlave Topraklama Kazıkları'), bl(),
-        fml(`Rç_tek = [${inputs.rhoE}/(2π×${inputs.catiKazik.Lc})] × ln(4×${inputs.catiKazik.Lc}/${inputs.catiKazik.dc}) = ${fmt(inputs.catiKazik.n>0?((inputs.rhoE/(2*Math.PI*inputs.catiKazik.Lc))*Math.log(4*inputs.catiKazik.Lc/inputs.catiKazik.dc)):0,3)} Ω`),
-        fml(`Rç = Rç_tek / ${inputs.catiKazik.n} = ${fmt(res.Rç,3)} Ω`),
-        bl(),
-        fml(`Reş = (R_mevcut × Rç)/(R_mevcut + Rç) × 1,10 = ${fmt(res.finalRes,3)} Ω`),
-      ] : [
-        bl(),
-        fml(`Reş = R_mevcut = ${fmt(res.finalRes,3)} Ω`),
-      ]),
+      ln(`Final Reş = paralel(${[res.sahaSon?.Res,...(res.koskSon||[]).map(k=>k?.Res)].filter(Boolean).map(v=>v?.toFixed(3)).join(', ')}) = ${f(res.Res,4)} Ω`,true),
+    ]:[
+      new Table({width:{size:9100,type:WidthType.DXA},columnWidths:[3000,2000,4100],
+        rows:[
+          hRow(['Eleman','Değer (Ω)','Açıklama'],[]),
+          dRow(mc('Mevcut Bina Toprağı',{bold:true}),mc(f(inputs.Rmev),{bold:true,align:AlignmentType.CENTER,fill:'D6E4F0'}),mc('Ölçülen değer')),
+          ...(res.Rc!=null?[dRow(mc(`İlave Kazık (${inputs.cKazik?.n} adet)`,{bold:true}),mc(f(res.Rc),{bold:true,align:AlignmentType.CENTER,fill:'D6E4F0'}),mc('Paralel kazıklar'))]:[]),
+        ]
+      }),
+      bl(),ln(`Final Reş = ${f(res.Res,4)} Ω (saf paralel — ×1.10 uygulanmaz)`,true),
     ]),
 
-    bl(), pg(),
+    bl(),pg(),
 
-    // 3. Dokunma Gerilimi
-    hdg('3.  DOKUNMA GERİLİMİ KONTROLÜ'), bl(),
-    ln(`Topraktan geçen arıza akımı It = r × Ik1 formülü ile belirlenir.`),
-    ln(`Tesiste ${rLabel.toLowerCase()} için bölünme katsayısı r = ${[0.6,0.45,0.3][inputs.rIdx||2]} alınmıştır.`),
-    bl(),
-    fml(`It = r × Ik1 = ${[0.6,0.45,0.3][inputs.rIdx||2]} × ${Ik1_A.toFixed(0)} = ${fmt(res.It,1)} A`),
-    bl(),
-    fml(`UE = IT × Reş = ${fmt(res.It,1)} × ${fmt(res.finalRes,3)} = ${fmt(res.UE,3)} V`),
-    bl(),
-    ln(`${inputs.t} sn için izin verilen en yüksek dokunma gerilimi ${res.Utp} V olduğundan,`),
-    bl(),
-    new Table({ width: { size: 9100, type: WidthType.DXA }, columnWidths: [2500,1800,1800,3000],
-      rows: [
-        hRow(['Kontrol', 'UE (V)', '2×UTP (V)', 'Sonuç'], [2500,1800,1800,3000]),
-        dRow(
-          mc(`Dokunma Gerilimi — t = ${inputs.t} s`),
-          mc(fmt(res.UE,2), { bold: true, align: AlignmentType.CENTER }),
-          mc(String(res.Utp*2), { align: AlignmentType.CENTER }),
-          okC(res.dok_ok)
-        ),
-      ]
-    }),
-    bl(),
-    ln(`${fmt(res.UE,3)} V (UE) ${res.dok_ok ? '<' : '>'} ${res.Utp*2} V (2×UTP) olduğundan, topraklama sistemi dokunma gerilimi yönünden ${res.dok_ok ? 'UYGUNDUR.' : 'UYGUN DEĞİLDİR.'}`, true),
-    bl(),
-    ...(res.dok_ok ? [
-      ln('* Dokunma gerilimine göre topraklama sistemi uygun olduğu için adım gerilimine bakmaya gerek yoktur.', false),
-    ] : []),
+    ...(isArazi?[
+      hdg('3.  DOKUNMA GERİLİMİ — ETT YÖNETMELİĞİ'),bl(),
+      fml(`UE = It × Reş = ${f(res.It,1)} × ${f(res.Res,3)} = ${f(res.UE,2)} V`),
+      bl(),
+      new Table({width:{size:9100,type:WidthType.DXA},columnWidths:[2500,1600,1600,3400],
+        rows:[
+          hRow(['Kontrol','Hesaplanan','Sınır','Sonuç'],[]),
+          dRow(mc(`Dokunma Gerilimi — t=${inputs.t}s`),mc(`${f(res.UE,2)} V`,{align:AlignmentType.CENTER}),mc(`${res.Utp} V`,{align:AlignmentType.CENTER}),okC(res.dok_ok)),
+          dRow(mc(`Adım Gerilimi — t=${inputs.t}s`),mc(`${f(res.Ua,1)} V`,{align:AlignmentType.CENTER}),mc('200 V',{align:AlignmentType.CENTER}),okC(res.adim_ok)),
+        ]
+      }),bl(),
 
-    bl(), pg(),
+      hdg('4.  İLETKEN KESİTİ — ETT'),bl(),
+      fml(`S = I"k1 × √t / k = ${Ik1A.toFixed(0)} × √${inputs.t} / 115 = ${f(res.qH,2)} mm²`),
+      ln(`Seçilen: ${res.qS} mm² (ETT min. 50 mm² galvaniz şerit)`,true),bl(),
 
-    // 3.5. Grafikler
-    hdg('3.  REFERANS GRAFİKLER'), bl(),
+      hdg('5.  RCD KONTROLÜ — OG Normal İşletme'),bl(),
+      fml(`Reş ≤ 50/(${inputs.nInv}×0.3) = ${(50/(inputs.nInv*.3)).toFixed(2)} Ω`),
+      new Table({width:{size:9100,type:WidthType.DXA},columnWidths:[3000,1800,1800,2500],
+        rows:[
+          hRow(['Kontrol','Reş (Ω)','Eşik (Ω)','Sonuç'],[]),
+          dRow(mc(`${inputs.nInv} evirici × 0.3A/inv`),mc(f(res.Res,3),{align:AlignmentType.CENTER}),mc((50/(inputs.nInv*.3)).toFixed(2),{align:AlignmentType.CENTER}),okC(res.rcd_ok)),
+        ]
+      }),
+    ]:[
+      hdg('3.  DOKUNMA GERİLİMİ & RCD — AG TT SİSTEMİ'),bl(),
+      ln('Standart: IEC 60364-7-712 / IEC 60364-4-41 md.411.5.3',true),
+      fml(`UE = Reş × Id = ${f(res.Res,3)} × ${f(res.Id,3)} = ${f(res.UE,2)} V`),
+      fml(`Reş sınırı = 50 / Id = 50 / ${f(res.Id,3)} = ${f(res.sinir,2)} Ω`),
+      bl(),
+      new Table({width:{size:9100,type:WidthType.DXA},columnWidths:[3500,1500,1500,2600],
+        rows:[
+          hRow(['Kontrol','Hesaplanan','Sınır','Sonuç'],[]),
+          dRow(mc('Dokunma Gerilimi UE ≤ 50V'),mc(`${f(res.UE,2)} V`,{align:AlignmentType.CENTER}),mc('50 V',{align:AlignmentType.CENTER}),okC(res.dok_ok)),
+          dRow(mc(`RCD Koşulu — Reş ≤ ${f(res.sinir,2)} Ω`),mc(f(res.Res,3),{align:AlignmentType.CENTER}),mc(f(res.sinir,2),{align:AlignmentType.CENTER}),okC(res.rcd_ok)),
+        ]
+      }),bl(),
+      ln('AG tesisinde I"k1 ile iletken kesit hesabı yapılmaz.'),
+      ln('Minimum PE iletken kesiti: 4 mm² Cu (IEC 60364-7-712 Tablo 712.54.1)'),
+    ]),
 
-    // UTP grafiği açıklaması
-    subh('3.1  Sınırlı Akım Süreleri için İzin Verilen Dokunma Gerilimleri (ETT Yönetmeliği)'),
-    new Table({ width:{ size:9100, type:WidthType.DXA }, columnWidths:[2500,6600],
-      rows:[dRow(
-        mc('Seçilen t değeri', { bold:true, fill:'F1F5F9' }),
-        mc(`t = ${inputs.t} s  →  UTP = ${res.Utp} V  →  2×UTP = ${res.Utp*2} V`, { bold:true })
-      ), dRow(
-        mc('Hesaplanan UE', { bold:true, fill:'F1F5F9' }),
-        mc(`UE = ${fmt(res.UE,2)} V  ${res.dok_ok?'<':'>'} 2×UTP = ${res.Utp*2} V  →  ${res.dok_ok?'UYGUN':'UYGUN DEĞİL'}`, { bold:true, tc: res.dok_ok?'276221':'9C0006' })
-      ), dRow(
-        mc('t = 0.5 s için', { fill:'F1F5F9' }), mc('UTP = 200 V  →  2×UTP = 400 V')
-      ), dRow(
-        mc('t = 1.0 s için', { fill:'F1F5F9' }), mc('UTP = 100 V  →  2×UTP = 200 V')
-      ), dRow(
-        mc('t = 2.0 s için', { fill:'F1F5F9' }), mc('UTP = 75 V  →  2×UTP = 150 V')
-      )]
-    }),
     bl(),
-
-    // G grafiği açıklaması
-    subh('3.2  İletken Isınma Kapasitesi G (A/mm²) — Kesit Seçim Tablosu'),
-    new Table({ width:{ size:9100, type:WidthType.DXA }, columnWidths:[500,2500,1800,1800,2500],
-      rows:[
-        hRow(['Eğri', 'Malzeme / Yalıtım Tipi', 'k (A/mm²)', 'Başlangıç °C', 'Son °C'], [500,2500,1800,1800,2500]),
-        dRow( mc('1',{align:'center'}), mc('Galvanizli Çelik Şerit (topraklama şeridi)'), mc('180',{align:'center',bold:true}), mc('—',{align:'center'}), mc('300°C',{align:'center'}) ),
-        dRow( mc('2',{align:'center'}), mc('XLPE/EPR izoleli Bakır iletken'), mc('143',{align:'center',bold:true}), mc('90°C',{align:'center'}), mc('250°C',{align:'center'}) ),
-        dRow( mc('3',{align:'center',fill:'DDF4E8'}), mc('Çıplak Bakır / PVC izoleli Bakır (hesapta kullanılan)', {fill:'DDF4E8'}), mc('115',{align:'center',bold:true,fill:'DDF4E8',tc:'276221'}), mc('70°C',{align:'center',fill:'DDF4E8'}), mc('160°C',{align:'center',fill:'DDF4E8'}) ),
-        dRow( mc('4',{align:'center'}), mc('Alüminyum iletken'), mc('76',{align:'center',bold:true}), mc('—',{align:'center'}), mc('300°C',{align:'center'}) ),
-        dRow( mc('—',{align:'center',fill:'FFF7ED'}), mc('Bu hesapta (k=115, t='+inputs.t+'s)',{fill:'FFF7ED'}), mc('115',{align:'center',bold:true,fill:'FFF7ED'}), mc('',{fill:'FFF7ED'}), mc(`S = ${fmt(res.q_hesap,2)} mm² → ${res.q_sec} mm²`,{bold:true,tc:'C2410C',fill:'FFF7ED'}) ),
-      ]
-    }),
-    ln('Formül: S = Ik1 × √t / k   [S: mm², Ik1: A, t: s, k: A/mm² (malzeme katsayısı)]'),
-    bl(),
-
-    bl(), pg(),
-
-    // 4. İletken Kesit
-    hdg('4.  TOPRAKLAMA İLETKENİ MİNİMUM KESİTİ'), bl(),
-    subh('4.1  Koruma İletkeni Kesiti (Çıplak Bakır, k=115)'),
-    fml(`S = Ik1 × √t / k = ${Ik1_A.toFixed(0)} × √${inputs.t} / 115 = ${fmt(res.q_hesap,2)} mm²`),
-    ln(`→ Seçilen: ${res.q_sec} mm² Çıplak Bakır İletken`),
-    bl(),
-    subh('4.2  Topraklama Şeridi Minimum Kesiti (ETT Yönetmeliği Çizelge-4a)'),
-    ln('Topraklamalar yönetmeliği Çizelge-4a\'ya göre galvaniz şerit için belirlenen minimum kesit 50 mm² dir.'),
-    fml(`Seçilen: 30×3,5 mm Galvanizli Çelik Şerit  →  A = 30×3,5 = 105 mm² > 50 mm²  ✓`),
-
-    bl(), pg(),
-
-    // 5. Kaçak Akım
-    hdg('5.  KAÇAK AKIM RÖLESİ KONTROLÜ (Normal İşletme)'), bl(),
-    ln('TT sistemlerde UL = 50 V olacağından:'),
-    fml(`Reş × Ia ≤ 50V  →  Reş ≤ 50 / (n_inv × 0,3 A/evirici)`),
-    fml(`${fmt(res.finalRes,3)} Ω ≤ 50 / (${inputs.nInv} × 0,3) = ${fmt(50/(inputs.nInv*0.3),2)} Ω`),
-    bl(),
-    new Table({ width: { size: 9100, type: WidthType.DXA }, columnWidths: [2500,2200,2200,2200],
-      rows: [
-        hRow(['Kontrol', 'Reş (Ω)', 'Eşik (Ω)', 'Sonuç'], [2500,2200,2200,2200]),
-        dRow(
-          mc(`RCD Direnci — ${inputs.nInv} evirici`),
-          mc(fmt(res.finalRes,3), { bold: true, align: AlignmentType.CENTER }),
-          mc(fmt(50/(inputs.nInv*0.3),2), { align: AlignmentType.CENTER }),
-          okC(res.rcd_ok)
-        ),
-      ]
-    }),
-    bl(),
-    ln('Kaçak akım rölesi (RCD) kullanımı zorunludur.'),
+    ln(`Toplam Sonuç: ${res.dok_ok&&res.rcd_ok?'✓ Topraklama sistemi UYGUNDUR.':'✗ Uyumsuzluk tespit edildi — kırmızı satırları inceleyin.'}`,true),
   ];
 
-  const doc = new Document({
-    styles: { default: { document: { run: { font: 'Arial', size: 19 } } } },
-    sections: [{
-      properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1000, right: 900, bottom: 1000, left: 900 } } },
+  const doc=new Document({
+    styles:{default:{document:{run:{font:'Arial',size:19}}}},
+    sections:[{
+      properties:{page:{size:{width:11906,height:16838},margin:{top:1000,right:900,bottom:1000,left:900}}},
       children
     }]
   });
 
-  const blob = await Packer.toBlob(doc);
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href = url;
-  a.download = `GES_Topraklama_Hesabi_${new Date().toLocaleDateString('tr-TR').replace(/\./g,'-')}.docx`;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
+  const blob=await Packer.toBlob(doc);
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=`GES_Topraklama_${isArazi?'Arazi_OG':'Cati_AG'}.docx`;
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);URL.revokeObjectURL(url);
 }
