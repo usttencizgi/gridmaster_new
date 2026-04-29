@@ -102,19 +102,20 @@ export function calcOgShortCircuit(sourceParams, lines, cablesDB) {
 
   // ── 4. Sıfır sıra empedansı (faz–toprak için) ───────────────────
   const trafoTip = sourceParams.trafoTip || 'Dyn';
-  // Dyn: delta primer şebeke Z0'ını bloklar → Z0_kaynak = yalnızca trafo
-  // type='current' modunda Z_trafo_pu = 0 olabilir → Z_bara_pu kullan
+  const RNTD_pu  = ((sourceParams.Rntd || 0) * 3) / Zb; // 3×RNTD sıfır sıra devresinde
+
   const Z0_kaynak_pu = trafoTip === 'Dyn'
-    ? (Z_trafo_pu > 0 ? Z_trafo_pu : Z_bara_pu * 0.8) // tip=current: bara'nın %80'i trafo payı
+    ? (Z_trafo_pu > 0 ? Z_trafo_pu : Z_bara_pu * 0.8)
     : Z_bara_pu;
 
   let Z0_lines_pu = 0;
   lineDetails.forEach(d => { Z0_lines_pu += (d.Z_seg_ohm * d.z0Ratio) / Zb; });
 
-  const Z0_bara_pu  = Z0_kaynak_pu;
-  const Z0_total_pu = Z0_kaynak_pu + Z0_lines_pu;
+  const Z0_bara_pu  = Z0_kaynak_pu + RNTD_pu;         // NTD dahil
+  const Z0_total_pu = Z0_kaynak_pu + Z0_lines_pu + RNTD_pu; // NTD dahil
 
   // I"k1 = c × 3 × Ib / (2×Z1 + Z0)  — IEC 60909
+  // NOT: I"k3 değişmez — simetrik kısa devrede nötr akımı sıfır, RNTD devreye girmez
   const Ik1_bara_kA = (Z_bara_pu > 0 && Z0_bara_pu > 0)
     ? (c * 3 * Ib / ((2 * Z_bara_pu  + Z0_bara_pu)  * 1000)) : 0;
   const Ik1_end_kA  = (Z_total_pu > 0 && Z0_total_pu > 0)
@@ -133,7 +134,7 @@ export function calcOgShortCircuit(sourceParams, lines, cablesDB) {
     ip_end:         ip_end_kA,
     Ik1_bara:  Ik1_bara_kA,  Ik1_end:  Ik1_end_kA,
     ip1_bara:  ip1_bara_kA,  ip1_end:  ip1_end_kA,
-    Z0_bara_pu, Z0_total_pu, Z0_lines_pu, Z0_kaynak_pu, trafoTip,
+    Z0_bara_pu, Z0_total_pu, Z0_lines_pu, Z0_kaynak_pu, trafoTip, Rntd: sourceParams.Rntd || 0,
     zBaraPu: Z_bara_pu,  zTotalPu: Z_total_pu,
     Z_grid_pu, Z_trafo_pu, Z_lines_pu, Z_lines_total_ohm,
     Z1_bara_ohm, Z1_end_ohm, lineDetails,

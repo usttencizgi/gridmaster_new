@@ -20,6 +20,7 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
   const [manualTrafoUk, setManualTrafoUk] = useState(12.5);
   const [exporting, setExporting] = useState(false);
   const [trafoTip, setTrafoTip] = useState('Dyn');
+  const [Rntd, setRntd]         = useState(20);   // Ω — Nötr Topraklama Direnci
   const [pdfParsing, setPdfParsing] = useState(false);
   const [pdfInfo, setPdfInfo] = useState(null); // { sourceName, count }
 
@@ -82,10 +83,11 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
     let sourceParams = {};
     if (isManualMode) {
       const sk154_MVA = 1.732 * 154 * manualIk154 / 1000;
-      sourceParams = { type: 'power', sk154: sk154_MVA, trafoPower: manualTrafoPower, trafoUk: manualTrafoUk, trafoTip };
+      sourceParams = { type: 'power', sk154: sk154_MVA, trafoPower: manualTrafoPower, trafoUk: manualTrafoUk, trafoTip, Rntd };
+
     } else {
       if (!selectedTrafo) return;
-      sourceParams = { type: 'current', current: selectedTrafo.current, trafoTip };
+      sourceParams = { type: 'current', current: selectedTrafo.current, trafoTip, Rntd };
     }
     setResult(calcOgShortCircuit(sourceParams, lines, cables));
   };
@@ -172,6 +174,32 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
                   <div className={`text-[10px] font-normal mt-0.5 ${trafoTip === opt.val ? 'text-purple-500' : 'text-slate-400'}`}>{opt.sub}</div>
                 </button>
               ))}
+            </div>
+
+            {/* NTD Direnci */}
+            <div className="mt-3 pt-3 border-t border-slate-200">
+              <div className="text-[10px] font-bold text-slate-400 uppercase mb-1.5">
+                Nötr Topraklama Direnci R<sub>NTD</sub>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" value={Rntd} min={0} step={5}
+                  onChange={e => setRntd(+e.target.value)}
+                  className="flex-1 border-2 border-slate-200 rounded-xl px-3 py-2 text-sm font-mono font-bold focus:border-purple-400 outline-none"
+                />
+                <span className="text-sm text-slate-500 font-mono">Ω</span>
+              </div>
+              <div className="mt-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 text-[10px] text-amber-700 leading-relaxed">
+                <b>DAĞITIM: 20 Ω</b> (UEDAŞ, BAŞKENT vb.) &nbsp;|&nbsp; <b>TEİAŞ İletim: 0 Ω</b><br/>
+                I"k3 değişmez (simetrik kısa devrede nötr akımı = 0)<br/>
+                Sadece <b>I"k1'i</b> düşürür: Z0 += 3×R<sub>NTD</sub>
+              </div>
+              {Rntd > 0 && (
+                <div className="mt-1.5 text-[10px] font-mono text-purple-700 bg-purple-50 rounded-lg px-2.5 py-1.5">
+                  3×R<sub>NTD</sub> = {(3*Rntd).toFixed(0)} Ω → Z0'a eklenir
+                  &nbsp;|&nbsp; Max I"k1 ≈ {((34500/Math.sqrt(3))/(3*Rntd)/1000).toFixed(3)} kA
+                </div>
+              )}
             </div>
           </div>
 
@@ -408,7 +436,7 @@ export default function OgShortCircuit({ cables, teiashData, teiashLoading, onGo
                   )}
                   <div className="text-center">
                     <span className="text-[10px] font-mono text-slate-400">
-                      Z0/Z1 ≈ 3.5 (kablo/hat)  |  Trafo: {result.trafoTip||'Dyn'}  |  I"k1 = c×3×Ib / (2×Z1+Z0)
+                      Z0/Z1 ≈ 3.5 (kablo/hat)  |  Trafo: {result.trafoTip||'Dyn'}  |  R_NTD: {result.Rntd||0} Ω  |  I"k1 = c×3×Ib / (2×Z1+Z0+3×R_NTD)
                     </span>
                   </div>
                 </div>
