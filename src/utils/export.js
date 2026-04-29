@@ -1261,9 +1261,92 @@ export function exportGesTopraklamaPDF(inputs, res) {
   const f = (n, d=3) => (typeof n === 'number' && isFinite(n)) ? n.toFixed(d) : '—';
   const isArazi = res.mod === 'arazi';
 
+  // ── Şekil-7 Akış Şeması SVG ───────────────────────────────────
+  function makeAlgorithmSvg(ue_val, utp_val, dok_ok) {
+    const W=380, H=460;
+    const c2ok = ue_val <= 2*utp_val;
+    const c4ok = !c2ok && ue_val <= 4*utp_val;
+    const extra = !c2ok && !c4ok;
+    // renkler
+    const GRN='#16a34a', RED='#dc2626', GRY='#94a3b8', BLU='#1e40af', AMB='#d97706';
+    const actC2  = c2ok  ? GRN : GRY;
+    const actC4  = c4ok  ? AMB : GRY;
+    const actExt = extra ? RED : GRY;
+    function box(x,y,w,h,fill,txt,fs=9,bold=false,r=4){
+      return '<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" rx="'+r+'" fill="'+fill+'" stroke="#64748b" stroke-width="0.8"/>'
+        +'<foreignObject x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'">'
+        +'<div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:center;height:100%;padding:3px;text-align:center;font-family:Arial;font-size:'+fs+'px;font-weight:'+(bold?'700':'400')+';color:#1e293b;line-height:1.2">'+txt+'</div>'
+        +'</foreignObject>';
+    }
+    function diamond(x,y,w,h,fill,txt,c='#1e293b'){
+      const mx=x+w/2,my=y+h/2;
+      return '<polygon points="'+mx+','+y+' '+(x+w)+','+my+' '+mx+','+(y+h)+' '+x+','+my+'" fill="'+fill+'" stroke="#64748b" stroke-width="0.8"/>'
+        +'<foreignObject x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'">'
+        +'<div xmlns="http://www.w3.org/1999/xhtml" style="display:flex;align-items:center;justify-content:center;height:100%;padding:6px;text-align:center;font-family:Arial;font-size:8px;font-weight:700;color:'+c+';line-height:1.2">'+txt+'</div>'
+        +'</foreignObject>';
+    }
+    function arr(x1,y1,x2,y2){
+      return '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" stroke="#475569" stroke-width="1.2" marker-end="url(#arr)"/>';
+    }
+    function lbl(x,y,txt,c='#475569'){
+      return '<text x="'+x+'" y="'+y+'" font-size="8" fill="'+c+'" font-weight="bold">'+txt+'</text>';
+    }
+    return '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xhtml="http://www.w3.org/1999/xhtml" width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="background:white;border:1px solid #e2e8f0;border-radius:6px;max-width:100%">'
+      // ok başı tanımı
+      +'<defs><marker id="arr" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#475569"/></marker></defs>'
+      // başlık
+      +'<text x="'+W/2+'" y="16" text-anchor="middle" font-size="9" font-weight="bold" fill="#1e293b" font-family="Arial">Topraklama Yönetmeliği Şekil-7 — Kontrol Algoritması</text>'
+      // 1. kutu: Temel boyutlandırma
+      +box(130,22,120,30,'#dbeafe','Temel Boyutlandırma',9,true)
+      +arr(190,52,190,70)
+      // 2. kutu: IE ve ZE
+      +box(90,70,200,36,'#f0f9ff','I<sub>E</sub> ve Z<sub>E</sub> belirlenmesi<br>UE = I<sub>E</sub> × Z<sub>E</sub>',8)
+      +'<text x="245" y="94" font-size="7" fill="#64748b" font-family="Arial">IE için Çizelge-1</text>'
+      +arr(190,106,190,124)
+      // 3. eşkenar: UE ≤ 2×UTP
+      +diamond(110,124,160,52,c2ok?'#dcfce7':'#fff7ed','UE ≤ 2×U<sub>Tp</sub> (C2)',c2ok?GRN:AMB)
+      // C2 → Evet
+      +arr(190,176,190,195)
+      +lbl(193,192,'Evet',c2ok?GRN:GRY)
+      // C2 evet kutusu
+      +box(110,195,160,32,c2ok?'#dcfce7':'#f8fafc','U<sub>Tp</sub> için Şekil-6\'ya atıf ✓',8,true)
+      // C2 → Hayır (sola)
+      +'<line x1="110" y1="150" x2="70" y2="150" stroke="#475569" stroke-width="1.2"/>'
+      +'<line x1="70" y1="150" x2="70" y2="242" stroke="#475569" stroke-width="1.2" stroke-dasharray="'+(c2ok?'4,2':'none')+'"/>'
+      +arr(70,242,95,242)
+      +lbl(30,148,'Hayır',c2ok?GRY:RED)
+      // 4. eşkenar: UE ≤ 4×UTP
+      +diamond(95,228,160,52,c4ok?'#fef9c3':'#f8fafc','UE ≤ 4×U<sub>Tp</sub>',c4ok?AMB:'#94a3b8')
+      // 4×UTP → Evet (sağa)
+      +'<line x1="255" y1="254" x2="300" y2="254" stroke="#475569" stroke-width="1.2" stroke-dasharray="'+(c4ok?'none':'4,2')+'"/>'
+      +'<line x1="300" y1="254" x2="300" y2="290" stroke="#475569" stroke-width="1.2" stroke-dasharray="'+(c4ok?'none':'4,2')+'"/>'
+      +arr(300,290,280,290)
+      +lbl(258,252,'Evet',c4ok?AMB:GRY)
+      +box(190,280,90,36,'#fef9c3','Hesap/ölçme ile<br>U<sub>T</sub> veya I<sub>B</sub>',8)
+      // 4×UTP → Hayır (sol-aşağı)
+      +'<line x1="95" y1="254" x2="20" y2="254" stroke="#475569" stroke-width="1.2" stroke-dasharray="'+(extra?'none':'4,2')+'"/>'
+      +'<line x1="20" y1="254" x2="20" y2="380" stroke="#475569" stroke-width="1.2" stroke-dasharray="'+(extra?'none':'4,2')+'"/>'
+      +arr(20,380,90,380)
+      +lbl(2,252,'Hayır',extra?RED:GRY)
+      +box(90,365,100,32,extra?'#fee2e2':'#f8fafc','Ek Önlemler<br>gerekli',8,false)
+      // UT≤UTP kutusu
+      +arr(235,316,235,338)
+      +diamond(150,338,170,52,dok_ok?'#dcfce7':'#fff7ed','U<sub>T</sub>≤U<sub>Tp</sub><br>veya I<sub>B</sub>≤I<sub>Bp</sub>',dok_ok?GRN:AMB)
+      // sonuç
+      +'<line x1="235" y1="390" x2="235" y2="420" stroke="#475569" stroke-width="1.2" stroke-dasharray="'+(dok_ok?'none':'4,2')+'"/>'
+      +arr(235,420,195,420)
+      +lbl(238,416,'Evet',GRN)
+      // sonuç oval
+      +'<ellipse cx="150" cy="430" rx="80" ry="18" fill="'+(dok_ok?'#dcfce7':'#fee2e2')+'" stroke="'+(dok_ok?GRN:RED)+'" stroke-width="1.5"/>'
+      +'<text x="150" y="434" text-anchor="middle" font-size="9" font-weight="bold" fill="'+(dok_ok?GRN:RED)+'" font-family="Arial">'+(dok_ok?'✓ UYGUN':'✗ UYGUN DEĞİL')+'</text>'
+      // hesaplanan değer bilgisi
+      +'<text x="'+W/2+'" y="'+(H-4)+'" text-anchor="middle" font-size="8" fill="#64748b" font-family="Arial">UE='+f(ue_val,2)+'V | 2×UTP='+f(utp_val*2,0)+'V | 4×UTP='+f(utp_val*4,0)+'V</text>'
+      +'</svg>';
+  }
+
   // ── UTP Eğrisi (sadece arazi/OG) ─────────────────────────────
   function makeUtpSvg(t_val, utp_val, ue_val, dok_ok) {
-    const UTP = [{t:.05,U:900},{t:.10,U:750},{t:.20,U:500},{t:.50,U:200},{t:1,U:100},{t:2,U:75},{t:5,U:70},{t:10,U:70}];
+    const UTP = [{t:.04,U:800},{t:.08,U:700},{t:.10,U:650},{t:.14,U:600},{t:.20,U:500},{t:.29,U:400},{t:.39,U:300},{t:.49,U:220},{t:.50,U:200},{t:.64,U:150},{t:.72,U:125},{t:1.0,U:100},{t:1.1,U:100},{t:2.0,U:60},{t:5.0,U:51},{t:10.0,U:50}];
     const W=420, H=170, lx=40, rx=410, ty=18, by=148;
     const tx = tv => lx + (Math.log10(tv)-Math.log10(0.03))/(Math.log10(10)-Math.log10(0.03))*(rx-lx);
     const uy = uv => by - (Math.log10(Math.min(Math.max(uv,50),1200))-Math.log10(50))/(Math.log10(1200)-Math.log10(50))*(by-ty);
@@ -1406,6 +1489,7 @@ export function exportGesTopraklamaPDF(inputs, res) {
 
     const utpSvg = makeUtpSvg(t_val, utp_val, ue_val, res.dok_ok);
     const gSvg   = makeGSvg(t_val, Ik1A);
+    const algSvg = makeAlgorithmSvg(ue_val, utp_val, res.dok_ok);
     const r_val  = [0.6, 0.45, 0.3][inputs.rIdx||2];
 
     body = ''
@@ -1437,19 +1521,20 @@ export function exportGesTopraklamaPDF(inputs, res) {
       + (parallelArr.length > 1 ? '&nbsp;&nbsp;→&nbsp;&nbsp;'+parallelFormula+' = '+f(res.Res,4)+' (paralel bağlantı)' : '')
       + '</div>'
 
-      // Bölüm 3 — UTP grafiği + dokunma kontrolü
-      + '<div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">3.  DOKUNMA GERİLİMİ KONTROLÜ</div>'
-      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">'
+      // Bölüm 3 — Algoritma şeması + dokunma kontrolü + UTP grafiği
+      + '<div style="margin:14px 0 6px;font-size:13px;font-weight:900;color:#065f46;border-bottom:2px solid #065f46;padding-bottom:4px">3.  DOKUNMA GERİLİMİ KONTROLÜ — ETT Yönetmeliği Şekil-7</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;align-items:start">'
       + '<div>'
       + '<div style="font-size:10px;color:#475569;margin-bottom:8px;font-family:monospace;background:#f8fafc;padding:8px;border-radius:6px">'
       + 'UE = It × Reş = '+f(res.It,1)+' × '+f(res.Res,3)+' = <b>'+f(ue_val,2)+' V</b>'
       + '</div>'
-      + okBox(res.dok_ok, 'Dokunma Gerilimi — UE &lt; UTP(t)', ue_val, '&lt;', utp_val, 'V',
-             'UE='+f(ue_val,2)+'V '+(res.dok_ok?'&lt;':'&gt;')+' UTP('+t_val+'s)='+utp_val+'V')
+      + okBox(res.dok_ok, 'C2: UE &lt; 2×UTP('+t_val+'s) = '+f(utp_val*2,0)+' V', ue_val, '&lt;', utp_val*2, 'V',
+             'UE='+f(ue_val,2)+'V '+(res.dok_ok?'&lt;':'&gt;')+' 2×UTP('+t_val+'s)='+f(utp_val*2,0)+'V')
       + (res.dok_ok
-          ? '<div style="font-size:9px;color:#15803d;margin-top:6px;font-style:italic">✓ Dokunma gerilimi uygun — adım gerilimine bakmaya gerek yok.</div>'
-          : '<div style="font-size:9px;color:#dc2626;margin-top:6px">✗ Reş düşürülmeli: daha fazla kazık veya daha büyük saha ağı gerekli.</div>')
+          ? '<div style="font-size:9px;color:#15803d;margin-top:6px;font-style:italic">✓ C2 koşulu sağlandı. Şekil-6 atıflı. Ek önlem gerekmez.</div>'
+          : '<div style="font-size:9px;color:#dc2626;margin-top:6px">✗ C2 aşıldı — Ek-C/D kapsamında detaylı analiz veya ek önlem gerekli.</div>')
       + '</div>'
+      + '<div>'+algSvg+'</div>'
       + '<div>'+utpSvg+'</div>'
       + '</div>'
 
@@ -1594,7 +1679,7 @@ export function exportGesTopraklamaPDF(inputs, res) {
         + '</tbody></table>'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px">'
         + '<div>'
-        + okBox(og.dok_ok,'OG Dokunma Gerilimi — UE < UTP(t)',og.UE,'<',og.Utp,'V','UE='+f(og.UE,2)+'V '+(og.dok_ok?'<':'>')+'UTP('+og.t+'s)='+og.Utp+'V')
+        + okBox(og.dok_ok,'OG Dokunma Gerilimi — ETT Şekil-7: UE < 2×UTP(t)',og.UE,'<',og.Utp*2,'V','UE='+f(og.UE,2)+'V '+(og.dok_ok?'<':'>')+'2×UTP('+og.t+'s)='+(og.Utp*2)+'V')
         + okBox(og.rcd_ok,'OG RCD Kontrolü — Reş ≤ 50/(n×0.3)',res.Res,'≤',50/((inputs.nInvAG||8)*0.3),'Ω','')
         + '<div style="background:#fef9c3;border:2px solid #eab308;border-radius:8px;padding:10px;text-align:center;margin-top:8px">'
         + '<div style="font-size:9px;font-weight:700;color:#92400e">OG Topraklama İletkeni (S=I×√t/k)</div>'
@@ -1629,7 +1714,7 @@ export function exportGesTopraklamaPDF(inputs, res) {
           ? '<div style="background:'+(res.ogPart.dok_ok?'#f5f3ff':'#fef2f2')+';border:2px solid '+(res.ogPart.dok_ok?'#7c3aed':'#dc2626')+';border-radius:8px;padding:12px;text-align:center">'
           + '<div style="font-size:9px;font-weight:700;color:'+(res.ogPart.dok_ok?'#5b21b6':'#991b1b')+';text-transform:uppercase;margin-bottom:4px">OG Topraklama</div>'
           + '<div style="font-size:22px;font-weight:900;font-family:monospace;color:'+(res.ogPart.dok_ok?'#5b21b6':'#dc2626')+'">'+(res.ogPart.dok_ok?'✓':'✗')+'</div>'
-          + '<div style="font-size:9px;color:#64748b">UE='+f(res.ogPart.UE,1)+'V / UTP='+res.ogPart.Utp+'V</div>'
+          + '<div style="font-size:9px;color:#64748b">UE='+f(res.ogPart.UE,1)+'V / 2×UTP='+(res.ogPart.Utp*2)+'V</div>'
           + '</div>'
           : '')
       + '</div>';
