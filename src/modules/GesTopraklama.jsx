@@ -3,9 +3,13 @@ import NumInput from '../components/NumInput.jsx';
 import { exportGesTopraklamaPDF, exportGesTopraklamaWord } from '../utils/export.js';
 
 // ─── UTP Tablosu (ETT / IEC 60479) ───────────────────────────────
+// Çizelge-C.3 — Topraklama Yönetmeliği (Şekil-6 eğrisi)
+// UTP: İzin verilen en yüksek dokunma gerilimi (YG tesisleri)
 const UTP_TABLE = [
-  {t:.05,U:900},{t:.10,U:750},{t:.20,U:500},{t:.50,U:200},
-  {t:1,U:100},{t:2,U:75},{t:5,U:70},{t:10,U:70},
+  {t:.04,U:800},{t:.08,U:700},{t:.10,U:650},{t:.14,U:600},
+  {t:.20,U:500},{t:.29,U:400},{t:.39,U:300},{t:.49,U:220},
+  {t:.50,U:200},{t:.64,U:150},{t:.72,U:125},{t:1.0,U:100},
+  {t:1.1,U:100},{t:2.0,U:60}, {t:5.0,U:51}, {t:10.0,U:50},
 ];
 function getUtp(t) {
   if (t <= UTP_TABLE[0].t) return UTP_TABLE[0].U;
@@ -101,14 +105,16 @@ function Check({ok,label,val,op,lim,unit,sub}){
 
 // UTP eğrisi mini grafik
 function UtpGraph({t,Utp,UE}){
-  const W=360,H=150,lx=38,rx=W-10,ty=18,by=H-20;
+  const W=360,H=160,lx=38,rx=W-10,ty=18,by=H-22;
   const tx=tv=>lx+(Math.log10(tv)-Math.log10(.03))/(Math.log10(10)-Math.log10(.03))*(rx-lx);
-  const uy=uv=>by-(Math.log10(Math.min(Math.max(uv,50),1200))-Math.log10(50))/(Math.log10(1200)-Math.log10(50))*(by-ty);
+  const uy=uv=>by-(Math.log10(Math.min(Math.max(uv,50),1500))-Math.log10(50))/(Math.log10(1500)-Math.log10(50))*(by-ty);
   const pts=UTP_TABLE.map(p=>`${tx(p.t).toFixed(1)},${uy(p.U).toFixed(1)}`).join(' ');
+  const utp2=Utp*2;
+  const dok_ok=UE<utp2;
   return(
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full">
       <rect width={W} height={H} fill="#f8fafc" rx="6"/>
-      <text x={W/2} y={12} textAnchor="middle" fontSize="8" fontWeight="bold" fill="#334155">UTP — Dokunma Gerilimi Sınırı (ETT)</text>
+      <text x={W/2} y={12} textAnchor="middle" fontSize="8" fontWeight="bold" fill="#334155">UTP — Dokunma Gerilimi Sınırı (ETT Şekil-7)</text>
       {[70,100,200,500,1000].map(u=>(
         <g key={u}>
           <line x1={lx} y1={uy(u)} x2={rx} y2={uy(u)} stroke="#e2e8f0" strokeWidth="0.5"/>
@@ -123,11 +129,34 @@ function UtpGraph({t,Utp,UE}){
       ))}
       <line x1={lx} y1={ty} x2={lx} y2={by} stroke="#94a3b8" strokeWidth="1"/>
       <line x1={lx} y1={by} x2={rx} y2={by} stroke="#94a3b8" strokeWidth="1"/>
+      {/* UTP eğrisi */}
       <polyline points={pts} fill="none" stroke="#10b981" strokeWidth="2" strokeLinejoin="round"/>
+      {/* 2×UTP eğrisi (kesik, mavi) */}
+      <polyline points={UTP_TABLE.map(p=>`${tx(p.t).toFixed(1)},${uy(p.U*2).toFixed(1)}`).join(' ')}
+        fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="5,2" strokeLinejoin="round"/>
+      {/* t çizgisi */}
       <line x1={tx(t)} y1={ty} x2={tx(t)} y2={by} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="3,2"/>
-      <circle cx={tx(t)} cy={uy(Utp)} r="3.5" fill="#f59e0b" stroke="white" strokeWidth="1"/>
-      <text x={tx(t)+4} y={uy(Utp)-3} fontSize="7" fill="#92400e" fontWeight="bold">UTP={Utp}V</text>
-      {UE>0&&UE<1500&&<line x1={lx} y1={uy(UE)} x2={rx} y2={uy(UE)} stroke="#ef4444" strokeWidth="1.5" strokeDasharray="4,2"/>}
+      {/* UTP noktası */}
+      <circle cx={tx(t)} cy={uy(Utp)} r={3} fill="#10b981" stroke="white" strokeWidth="1"/>
+      <text x={tx(t)+4} y={uy(Utp)-3} fontSize="7" fill="#065f46" fontWeight="bold">UTP={Utp}V</text>
+      {/* 2×UTP noktası */}
+      {utp2<1500&&<>
+        <circle cx={tx(t)} cy={uy(utp2)} r={3.5} fill="#2563eb" stroke="white" strokeWidth="1"/>
+        <text x={tx(t)+4} y={uy(utp2)-3} fontSize="7" fill="#1d4ed8" fontWeight="bold">2×UTP={utp2}V ← Sınır</text>
+      </>}
+      {/* UE çizgisi */}
+      {UE>0&&UE<1500&&<>
+        <line x1={lx} y1={uy(UE)} x2={rx} y2={uy(UE)}
+          stroke={dok_ok?'#16a34a':'#ef4444'} strokeWidth="2" strokeDasharray="4,2"/>
+        <text x={rx-3} y={uy(UE)-3} textAnchor="end" fontSize="7.5" fontWeight="bold"
+          fill={dok_ok?'#15803d':'#dc2626'}>UE={UE.toFixed(1)}V {dok_ok?'✓':'✗'}</text>
+      </>}
+      {/* Açıklama */}
+      <rect x={lx+2} y={by-30} width={90} height={28} rx={3} fill="white" fillOpacity="0.9"/>
+      <line x1={lx+4} y1={by-22} x2={lx+18} y2={by-22} stroke="#10b981" strokeWidth="1.5"/>
+      <text x={lx+20} y={by-19} fontSize="6.5" fill="#065f46">UTP (Şekil-6)</text>
+      <line x1={lx+4} y1={by-12} x2={lx+18} y2={by-12} stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4,2"/>
+      <text x={lx+20} y={by-9} fontSize="6.5" fill="#1d4ed8">2×UTP (C2 sınırı)</text>
     </svg>
   );
 }
@@ -280,7 +309,7 @@ export default function GesTopraklama({initialIk1=0}){
       const UE=Res*It;
 
       // Kontrol 1: UE < UTP(t)
-      const dok_ok=UE<Utp;
+      const dok_ok=UE<2*Utp; // ETT Yönetmeliği Şekil-7: UE < 2×UTP
 
       // Kontrol 2: Adım gerilimi (saha sınırı)
       const A=saha.a*saha.b;
@@ -333,7 +362,7 @@ export default function GesTopraklama({initialIk1=0}){
         ogPart = {
           Ik1: cIk1, Ik1A: Ik1A_og, rIdx: cRIdx, t: cT,
           r: r_og, It: It_og, UE: UE_og, Utp: Utp_og,
-          dok_ok: UE_og < Utp_og,
+          dok_ok: UE_og < 2*Utp_og, // ETT Şekil-7: 2×UTP
           rcd_ok: Res <= 50/(nInvAG*0.3),
           qH: qH_og, qS: qS_og,
         };
@@ -689,12 +718,12 @@ export default function GesTopraklama({initialIk1=0}){
                 </div>
                 <UtpGraph t={t} Utp={res.Utp} UE={res.UE}/>
                 <div className="bg-slate-50 rounded-lg px-3 py-2 text-[10px] font-mono text-slate-500">
-                  UE=It×Reş={res.It?.toFixed(1)}×{res.Res?.toFixed(3)}={res.UE?.toFixed(2)}V &nbsp;|&nbsp; UTP({t}s)={res.Utp}V
+                  UE=It×Reş={res.It?.toFixed(1)}×{res.Res?.toFixed(3)}={res.UE?.toFixed(2)}V &nbsp;|&nbsp; 2×UTP({t}s)={res.Utp&&res.Utp*2}V
                 </div>
                 <Check ok={res.dok_ok}
-                  label={`Dokunma Gerilimi — t=${t}s | UTP=${res.Utp}V`}
-                  val={res.UE} op="<" lim={res.Utp} unit="V"
-                  sub={`UE=${res.UE?.toFixed(2)}V ${res.dok_ok?'<':'>'} UTP(${t}s)=${res.Utp}V`}/>
+                  label={`Dokunma Gerilimi — ETT Şekil-7: UE < 2×UTP(${t}s) = ${res.Utp&&res.Utp*2}V`}
+                  val={res.UE} op="<" lim={res.Utp&&res.Utp*2} unit="V"
+                  sub={`UE=${res.UE?.toFixed(2)}V ${res.dok_ok?'<':'>'} 2×UTP(${t}s)=${res.Utp&&res.Utp*2}V — ETT Yönetmeliği Şekil-7`}/>
                 <Check ok={res.adim_ok}
                   label={`Adım Gerilimi — t=${t}s | Sınır=${getLimitUa(t)}V`}
                   val={res.Ua} op="<" lim={getLimitUa(t)} unit="V"
